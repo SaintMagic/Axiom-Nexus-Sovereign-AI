@@ -1,0 +1,775 @@
+{
+    "id":  "3",
+    "name":  "Axiom Master Router",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "openclaw-exec",
+                                         "responseMode":  "onReceived",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "2af7d501-8fc2-4099-906d-7195e6f6631b",
+                      "name":  "Webhook Input",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       0,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForEachItem",
+                                         "jsCode":  "return { json: { mode: $input.item.json.body.mode || \u0027chat\u0027, content: $input.item.json.body.content } };"
+                                     },
+                      "id":  "e6a7c3d1-46a5-4876-9d5a-52f2c8a7412a",
+                      "name":  "Extract Input",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  1,
+                      "position":  [
+                                       200,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.mode }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "chat"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  0
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.mode }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "tool"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  1
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.mode }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "task"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  2
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "b3e9f4c2-7d8a-4b95-a2c6-1e9d3f5b8a7c",
+                      "name":  "Mode Router",
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  1,
+                      "position":  [
+                                       400,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "CREATE TABLE IF NOT EXISTS short_term_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "c4d8e5f6-7a8b-4c9d-8e7f-6a5b4c3d2e1f",
+                      "name":  "Init Memory DB",
+                      "type":  "n8n-nodes-base.sqlite",
+                      "typeVersion":  1,
+                      "position":  [
+                                       600,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "SELECT * FROM short_term_memory ORDER BY timestamp DESC LIMIT 10;",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "d5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a",
+                      "name":  "Fetch Memory",
+                      "type":  "n8n-nodes-base.sqlite",
+                      "typeVersion":  1,
+                      "position":  [
+                                       800,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const originalContent = $node[\"Extract Input\"].json.content;\nconst historyRaw = $input.all().map(i =\u003e i.json);\nconst history = historyRaw.reverse();\nlet historyStr = history.map(m =\u003e `${m.sender}: ${m.content}`).join(\u0027\\n\u0027);\n\nconst systemPrompt = `You are OpenClaw, the Sovereign AI Engine for Axiom Nexus. Be helpful and concise.\\n\\nCONVERSATION HISTORY:\\n${historyStr}`;\n\nreturn { prompt: originalContent, system: systemPrompt };"
+                                     },
+                      "id":  "f6a7b8c9-d0e1-4f2a-b3c4-d5e6f7a8b9c0",
+                      "name":  "Build Chat Prompt",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1000,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  "llama3.2",
+                                         "prompt":  "={{$json.prompt}}",
+                                         "systemPrompt":  "={{$json.system}}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                      "name":  "Ollama Chat",
+                      "type":  "n8n-nodes-base.ollama",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1200,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "=INSERT INTO short_term_memory (sender, content) VALUES (\u0027user\u0027, \u0027{{$node[\"Extract Input\"].json.content}}\u0027); INSERT INTO short_term_memory (sender, content) VALUES (\u0027agent\u0027, \u0027{{$json.response}}\u0027);",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+                      "name":  "Save Chat Memory",
+                      "type":  "n8n-nodes-base.sqlite",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1400,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "={{$node[\"Ollama Chat\"].json.response}}"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "c3d4e5f6-a7b8-4c9d-8e7f-6a5b4c3d2e1f",
+                      "name":  "Format Chat Output",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1600,
+                                       0
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  "llama3.2",
+                                         "prompt":  "={{$node[\"Extract Input\"].json.content}}",
+                                         "systemPrompt":  "Convert the user\u0027s tool request into STRICT JSON matching exactly this schema:\n{\n  \"action\": \"write_file\" | \"read_file\" | \"list_directory\",\n  \"path\": \"THE ABSOLUTE PATH OR FILENAME\",\n  \"content\": \"THE DATA TO WRITE (if write_file)\"\n}\nRespond ONLY with raw JSON. No markdown backticks. No explanation.",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+                      "name":  "Ollama Tool Parse",
+                      "type":  "n8n-nodes-base.ollama",
+                      "typeVersion":  1,
+                      "position":  [
+                                       600,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "try {\n  const parsed = JSON.parse($input.item.json.response);\n  return { json: parsed };\n} catch(e) {\n  return { json: { action: \u0027error\u0027, message: \u0027Failed to parse JSON\u0027 } };\n}"
+                                     },
+                      "id":  "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+                      "name":  "Parse JSON",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  1,
+                      "position":  [
+                                       800,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "write_file"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  0
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "read_file"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  1
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "list_directory"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "outputIndex":  2
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+                                                         "fallbackOutput":  3
+                                                     }
+                                     },
+                      "id":  "f6a7b8c9-d0e1-4f2a-b3c4-d5e6f7a8b9c0",
+                      "name":  "Tool Hub",
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1000,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "write",
+                                         "fileName":  "={{$json.path}}",
+                                         "dataPropertyName":  "={{$json.content}}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                      "name":  "Tool: Write File",
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1200,
+                                       100
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "read",
+                                         "fileName":  "={{$json.path}}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+                      "name":  "Tool: Read File",
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1200,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "list",
+                                         "path":  "={{$json.path}}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "c3d4e5f6-a7b8-4c9d-8e7f-6a5b4c3d2e1f",
+                      "name":  "Tool: List Directory",
+                      "type":  "n8n-nodes-base.readWriteFile",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1200,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "Unknown or invalid action requested."
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+                      "name":  "Error Tool Format",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1200,
+                                       400
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "=I have successfully written the file to {{$node[\"Parse JSON\"].json.path}}."
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+                      "name":  "Format Write Output",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1400,
+                                       100
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "=File Contents:\n\n{{$json.data}}"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "f6a7b8c9-d0e1-4f2a-b3c4-d5e6f7a8b9c0",
+                      "name":  "Format Read Output",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1400,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "=Directory Contents:\n\n{{JSON.stringify($input.all().map(i =\u003e i.json.name), null, 2)}}"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                      "name":  "Format List Output",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1400,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "model":  "llama3.2",
+                                         "prompt":  "={{$node[\"Extract Input\"].json.content}}",
+                                         "systemPrompt":  "You are OpenClaw, processing an automation task. The user is outlining a multi-step objective for you.",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+                      "name":  "Ollama Task Mode",
+                      "type":  "n8n-nodes-base.ollama",
+                      "typeVersion":  1,
+                      "position":  [
+                                       600,
+                                       500
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "keepOnlySet":  true,
+                                         "values":  {
+                                                        "string":  [
+                                                                       {
+                                                                           "name":  "response",
+                                                                           "value":  "={{$node[\"Ollama Task Mode\"].json.response}}"
+                                                                       }
+                                                                   ]
+                                                    },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "c3d4e5f6-a7b8-4c9d-8e7f-6a5b4c3d2e1f",
+                      "name":  "Format Task Output",
+                      "type":  "n8n-nodes-base.set",
+                      "typeVersion":  1,
+                      "position":  [
+                                       800,
+                                       500
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "allIncomingItems",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+                      "name":  "Final Response (Mock)",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1,
+                      "position":  [
+                                       2000,
+                                       200
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Webhook Input":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Extract Input",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Extract Input":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Mode Router",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Mode Router":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Init Memory DB",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ],
+                                                         [
+                                                             {
+                                                                 "node":  "Ollama Tool Parse",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ],
+                                                         [
+                                                             {
+                                                                 "node":  "Ollama Task Mode",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Init Memory DB":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Fetch Memory",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Fetch Memory":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Build Chat Prompt",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "Build Chat Prompt":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Ollama Chat",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Ollama Chat":  {
+                                            "main":  [
+                                                         [
+                                                             {
+                                                                 "node":  "Save Chat Memory",
+                                                                 "type":  "main",
+                                                                 "index":  0
+                                                             }
+                                                         ]
+                                                     ]
+                                        },
+                        "Save Chat Memory":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Format Chat Output",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Ollama Tool Parse":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Parse JSON",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Parse JSON":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Tool Hub",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Tool Hub":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Tool: Write File",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ],
+                                                      [
+                                                          {
+                                                              "node":  "Tool: Read File",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ],
+                                                      [
+                                                          {
+                                                              "node":  "Tool: List Directory",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ],
+                                                      [
+                                                          {
+                                                              "node":  "Error Tool Format",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Tool: Write File":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Format Write Output",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Tool: Read File":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Format Read Output",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Tool: List Directory":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Format List Output",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Ollama Task Mode":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Format Task Output",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Format Chat Output":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Final Response (Mock)",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Format Write Output":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Final Response (Mock)",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Format Read Output":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Final Response (Mock)",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Format List Output":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Final Response (Mock)",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Error Tool Format":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Final Response (Mock)",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Format Task Output":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Final Response (Mock)",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               }
+                    },
+    "settings":  {
+
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  {
+
+                },
+    "active":  true
+}
+

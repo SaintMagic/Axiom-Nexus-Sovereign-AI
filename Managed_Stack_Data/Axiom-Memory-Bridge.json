@@ -1,0 +1,206 @@
+{
+    "name": "Axiom Memory Bridge",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "openclaw-exec",
+                "options": {}
+            },
+            "id": "1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "CREATE TABLE IF NOT EXISTS short_term_memory (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS long_term_facts (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, fact TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);",
+                "options": {}
+            },
+            "id": "2",
+            "name": "Init DB",
+            "type": "n8n-nodes-base.sqlite",
+            "typeVersion": 1,
+            "position": [
+                300,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "SELECT * FROM short_term_memory ORDER BY timestamp DESC LIMIT 10;",
+                "options": {}
+            },
+            "id": "3",
+            "name": "Get Short-Term",
+            "type": "n8n-nodes-base.sqlite",
+            "typeVersion": 1,
+            "position": [
+                500,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "SELECT * FROM long_term_facts;",
+                "options": {}
+            },
+            "id": "4",
+            "name": "Get Long-Term",
+            "type": "n8n-nodes-base.sqlite",
+            "typeVersion": 1,
+            "position": [
+                500,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "jsCode": "const userInput = $node[\"Webhook\"].json.body.content;\nconst shortTerm = $node[\"Get Short-Term\"].json;\nconst longTerm = $node[\"Get Long-Term\"].json;\n\n// Reverse short term to get chronological order\nconst history = Object.values(shortTerm).reverse();\n\nlet historyStr = history.map(m => `${m.sender}: ${m.content}`).join('\\n');\nlet factsStr = Object.values(longTerm).map(f => `- ${f.fact}`).join('\\n');\n\nconst systemPrompt = `You are OpenClaw, the Sovereign AI Engine for Axiom Nexus.\\n\\nLONG-TERM FACTS:\\n${factsStr}\\n\\nCONVERSATION HISTORY:\\n${historyStr}`;\n\nreturn {\n  prompt: userInput,\n  system: systemPrompt\n};"
+            },
+            "id": "5",
+            "name": "Build Prompt",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 1,
+            "position": [
+                700,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "model": "llama3.2",
+                "prompt": "={{$json.prompt}}",
+                "systemPrompt": "={{$json.system}}",
+                "options": {}
+            },
+            "id": "6",
+            "name": "Ollama (llama3.2)",
+            "type": "n8n-nodes-base.ollama",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "operation": "executeQuery",
+                "query": "=INSERT INTO short_term_memory (sender, content) VALUES ('user', '{{$node[\"Webhook\"].json.body.content}}'); INSERT INTO short_term_memory (sender, content) VALUES ('agent', '{{$node[\"Ollama (llama3.2)\"].json.response}}');",
+                "options": {}
+            },
+            "id": "7",
+            "name": "Save History",
+            "type": "n8n-nodes-base.sqlite",
+            "typeVersion": 1,
+            "position": [
+                1100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "options": {}
+            },
+            "id": "8",
+            "name": "Respond",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1300,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Init DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Init DB": {
+            "main": [
+                [
+                    {
+                        "node": "Get Short-Term",
+                        "type": "main",
+                        "index": 0
+                    },
+                    {
+                        "node": "Get Long-Term",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Short-Term": {
+            "main": [
+                [
+                    {
+                        "node": "Build Prompt",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Get Long-Term": {
+            "main": [
+                [
+                    {
+                        "node": "Build Prompt",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Build Prompt": {
+            "main": [
+                [
+                    {
+                        "node": "Ollama (llama3.2)",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Ollama (llama3.2)": {
+            "main": [
+                [
+                    {
+                        "node": "Save History",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Save History": {
+            "main": [
+                [
+                    {
+                        "node": "Respond",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

@@ -1,0 +1,31 @@
+{
+    "id":  "test_id",
+    "name":  "Test Workflow",
+    "versionId":  "db8e3bb3-a5f1-460d-a342-fd82531636c2",
+    "nodes":  [
+                  {
+                      "id":  "test-node",
+                      "name":  "Test HTTP",
+                      "parameters":  {
+                                         "specifyBody":  "json",
+                                         "sendBody":  true,
+                                         "method":  "POST",
+                                         "options":  {
+
+                                                     },
+                                         "jsonBody":  "={\"model\": \"llama3.2\", \"stream\": false, \"prompt\": \"hi\"}",
+                                         "url":  "http://localhost:11434/api/generate"
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "position":  [
+                                       0,
+                                       0
+                                   ],
+                      "typeVersion":  4.2
+                  }
+              ],
+    "connections":  {
+
+                    },
+    "active":  false
+}

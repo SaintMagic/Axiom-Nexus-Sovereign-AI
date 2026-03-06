@@ -1,0 +1,85 @@
+[
+    {
+        "id": "5",
+        "name": "Axiom Auto-Filer",
+        "nodes": [
+            {
+                "parameters": {
+                    "operation": "list",
+                    "path": "C:/Axiom_Input",
+                    "options": {}
+                },
+                "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+                "name": "Scan Drop Folder",
+                "type": "n8n-nodes-base.readWriteFile",
+                "typeVersion": 1,
+                "position": [
+                    100,
+                    300
+                ]
+            },
+            {
+                "parameters": {
+                    "model": "llama3.2",
+                    "prompt": "=Categorize this file contents: {{$json.text}}. Respond ONLY in JSON with these keys: category (options: invoice, receipt, legal, other), suggested_filename.",
+                    "options": {
+                        "format": "json"
+                    }
+                },
+                "id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+                "name": "AI File Classification",
+                "type": "n8n-nodes-base.ollama",
+                "typeVersion": 1,
+                "position": [
+                    300,
+                    300
+                ]
+            },
+            {
+                "parameters": {
+                    "operation": "move",
+                    "fromPath": "={{$node[\"Scan Drop Folder\"].json.path}}",
+                    "toPath": "=C:/Axiom_Sorted/{{$json.category}}/{{$json.suggested_filename}}",
+                    "options": {}
+                },
+                "id": "c3d4e5f6-a7b8-4c9d-8e7f-6a5b4c3d2e1f",
+                "name": "Move to Sorted Box",
+                "type": "n8n-nodes-base.readWriteFile",
+                "typeVersion": 1,
+                "position": [
+                    500,
+                    300
+                ]
+            }
+        ],
+        "connections": {
+            "Scan Drop Folder": {
+                "main": [
+                    [
+                        {
+                            "node": "AI File Classification",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "AI File Classification": {
+                "main": [
+                    [
+                        {
+                            "node": "Move to Sorted Box",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            }
+        },
+        "settings": {},
+        "staticData": null,
+        "meta": null,
+        "pinData": {},
+        "active": true
+    }
+]

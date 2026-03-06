@@ -1,0 +1,432 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# $global:logFile will be initialized in the click handler to ensure a fresh session.
+
+# --- SHARED-STREAM LOGGING HELPER ---
+function Write-Log {
+    param([string]$Message)
+    try {
+        $msg = "[$(Get-Date -Format 'HH:mm:ss')] $Message`r`n"
+        [System.IO.File]::AppendAllText($global:logFile, $msg)
+    }
+    catch { }
+}
+
+
+# --- SELF-HIDING CONSOLE LOGIC ---
+$code = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
+Add-Type -MemberDefinition $code -Name "Win32ShowWindow" -Namespace "Win32" -ErrorAction SilentlyContinue
+$hwnd = (Get-Process -Id $PID).MainWindowHandle
+if ($hwnd -ne [IntPtr]::Zero) { [Win32.Win32ShowWindow]::ShowWindow($hwnd, 0) } # 0 = SW_HIDE
+
+
+# Create main form
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "Axiom Nexus: Sovereign AI Suite"
+$form.Size = New-Object System.Drawing.Size(600, 580)
+$form.StartPosition = "CenterScreen"
+$form.FormBorderStyle = "FixedDialog"
+$form.MaximizeBox = $false
+
+# Logo Implementation
+$logoPath = Join-Path $PSScriptRoot "Axiom Nexus Logo.jpg"
+if (Test-Path $logoPath) {
+    $pictureBox = New-Object System.Windows.Forms.PictureBox
+    $pictureBox.Image = [System.Drawing.Image]::FromFile($logoPath)
+    $pictureBox.Size = New-Object System.Drawing.Size(80, 80)
+    $pictureBox.Location = New-Object System.Drawing.Point(20, 20)
+    $pictureBox.SizeMode = "Zoom"
+    $form.Controls.Add($pictureBox)
+}
+
+# Title Label
+$titleLabel = New-Object System.Windows.Forms.Label
+$titleLabel.Text = "Axiom Nexus Installer"
+$titleLabel.AutoSize = $true
+$titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+$titleLabel.Location = New-Object System.Drawing.Point(120, 25)
+$form.Controls.Add($titleLabel)
+
+# Status Label (Main Step)
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Text = "Axiom Nexus: Sovereign AI Suite"
+$statusLabel.Size = New-Object System.Drawing.Size(440, 30)
+$statusLabel.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+$statusLabel.Location = New-Object System.Drawing.Point(120, 60)
+$form.Controls.Add($statusLabel)
+
+# Detail Label (Timer)
+$detailLabel = New-Object System.Windows.Forms.Label
+$detailLabel.Text = "Initializing secure agent infrastructure..."
+$detailLabel.Size = New-Object System.Drawing.Size(440, 25)
+$detailLabel.Font = New-Object System.Drawing.Font("Consolas", 10)
+$detailLabel.ForeColor = [System.Drawing.Color]::DimGray
+$detailLabel.Location = New-Object System.Drawing.Point(120, 90)
+$form.Controls.Add($detailLabel)
+
+# Progress Bar
+$progressBar = New-Object System.Windows.Forms.ProgressBar
+$progressBar.Size = New-Object System.Drawing.Size(540, 30)
+$progressBar.Location = New-Object System.Drawing.Point(20, 125)
+$progressBar.Style = "Continuous"
+$progressBar.Minimum = 0
+$progressBar.Maximum = 100
+$progressBar.Value = 0
+$form.Controls.Add($progressBar)
+
+# Terminal Output Box
+$textBox = New-Object System.Windows.Forms.TextBox
+$textBox.Size = New-Object System.Drawing.Size(540, 220)
+$textBox.Location = New-Object System.Drawing.Point(20, 175)
+$textBox.Multiline = $true
+$textBox.ReadOnly = $true
+$textBox.ScrollBars = "Vertical"
+$textBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+$textBox.BackColor = [System.Drawing.Color]::Black
+$textBox.ForeColor = [System.Drawing.Color]::LightGray
+$form.Controls.Add($textBox)
+
+# Install Button
+$installButton = New-Object System.Windows.Forms.Button
+$installButton.Text = "Install Now"
+$installButton.Size = New-Object System.Drawing.Size(140, 45)
+$installButton.Font = New-Object System.Drawing.Font("Segoe UI", 12)
+$installButton.Location = New-Object System.Drawing.Point(220, 420)
+$form.Controls.Add($installButton)
+
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 300
+
+function Start-NextStep {
+    try {
+        if ($global:installStep -eq 1) {
+            $statusLabel.Text = "Step 1/7: Preparing System (Applying MAX_PATH Fix)..."
+            $progressBar.Value = 10
+            Write-Log "--- Enabling Windows LongPathsEnabled ---"
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -ErrorAction SilentlyContinue
+            
+            Write-Log "--- Checking Node.js Environment ---"
+            # Refresh path to catch previous installs
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = "$machinePath;$userPath"
+
+            # Check for node via absolute path or command
+            $nodePath = "C:\Program Files\nodejs\node.exe"
+            if ((Test-Path $nodePath) -or (Get-Command node -ErrorAction SilentlyContinue)) {
+                Write-Log "Node.js detected. Skipping Step 1."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+            
+            Write-Log "--- Installing Node.js v22 (LTS) ---"
+            $cmdArgs = "/c winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 2) {
+            $statusLabel.Text = "Step 2/7: Installing Ollama..."
+            $progressBar.Value = 25
+            Write-Log "--- Installing Ollama (Winget) ---"
+            $cmdArgs = "/c winget install --id Ollama.Ollama -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 3) {
+            $statusLabel.Text = "Step 3/7: Closing conflicting apps..."
+            $progressBar.Value = 35
+            Write-Log "--- Clearing Lingering AI Processes ---"
+            
+            # 1. Stop Ollama Service (if exists)
+            $scStop = "/c sc stop ollama >> `"$global:logFile`" 2>&1"
+            Start-Process cmd.exe -ArgumentList $scStop -WindowStyle Hidden -Wait
+
+            # 2. Kill all potential CLI/Node locks
+            $scavengeCmd = "/c taskkill /F /IM `"ollama.exe`" /IM `"ollama app.exe`" /IM `"node.exe`" /IM `"n8n.exe`" /T >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $scavengeCmd -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 4) {
+            $statusLabel.Text = "Step 4/7: Deploying n8n Engine (Pinned v2.10.1)..."
+            $progressBar.Value = 45
+            Write-Log "--- Verifying n8n Engine Integrity ---"
+            
+            # Refresh path to catch previous installs
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = "$machinePath;$userPath"
+
+            # Get the effective npm root
+            $npmRoot = try { Invoke-Expression "npm root -g" | Out-String } catch { $null }
+            $n8nPath = if ($npmRoot) { Join-Path $npmRoot.Trim() "n8n" } else { "$env:APPDATA\npm\node_modules\n8n" }
+            $uiAsset = Join-Path $n8nPath "dist\public\index.html"
+            
+            # Check version AND physical presence of frontend assets
+            $checkCmd = "n8n --version"
+            $currentVer = try { Invoke-Expression $checkCmd 2>$null } catch { $null }
+            
+            if ($currentVer -eq "2.10.1" -and (Test-Path $uiAsset)) {
+                Write-Log "n8n v2.10.1 integrity verified. Skipping deployment."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            if (-not (Test-Path $uiAsset)) {
+                Write-Log "CRITICAL CORRUPTION: Frontend assets missing. Performing Deep Wipe..."
+                # Manual Wipe of the n8n directory to ensure npm install --force is clean
+                if (Test-Path $n8nPath) { 
+                    try { Remove-Item $n8nPath -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+                    if (Test-Path $n8nPath) { Rename-Item $n8nPath -NewName "n8n_corrupted_$(Get-Date -Format 'HHmm')" -ErrorAction SilentlyContinue }
+                }
+            }
+
+            Write-Log "--- Installing n8n@2.10.1 (Absolute Reconstruction) ---"
+            $cmdArgs = "/c npm cache clean --force && npm install -g n8n@2.10.1 --force --legacy-peer-deps --no-progress --loglevel=error >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 5) {
+            $statusLabel.Text = "Step 5/7: Integrating OpenClaw & Local AI Node..."
+            $progressBar.Value = 60
+            Write-Log "--- Hardening Multi-Agent Bridge ---"
+            
+            $PROJECT_ROOT = $PSScriptRoot
+            if (-not $PROJECT_ROOT) { $PROJECT_ROOT = (Get-Location).Path }
+            $CUSTOM_NODES_DIR = "$env:USERPROFILE\.n8n\custom"
+            if (-not (Test-Path $CUSTOM_NODES_DIR)) { New-Item -ItemType Directory -Force -Path $CUSTOM_NODES_DIR | Out-Null }
+            
+            # Pre-check: OpenClaw CLI
+            $ocCheck = try { Invoke-Expression "openclaw --version" 2>$null } catch { $null }
+            # Pre-check: Custom Node (check for dir existence)
+            $nodeCheck = Test-Path "$CUSTOM_NODES_DIR\node_modules\n8n-nodes-local-ai-manager"
+            
+            if ($ocCheck -and $nodeCheck) {
+                Write-Log "OpenClaw and Custom Node already integrated. Skipping."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            Write-Log "--- Installing OpenClaw Core & Custom Plugin ---"
+            $NODE_TGZ = "$PROJECT_ROOT\n8n-nodes-local-ai-manager-0.1.0.tgz"
+            # Consolidated install command
+            $cmdArgs = "/c npm install -g openclaw --loglevel=error --no-progress && cd /d `"$CUSTOM_NODES_DIR`" && if not exist package.json npm init -y && npm install `"$NODE_TGZ`" --save-exact --loglevel=error --no-progress >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 6) {
+            $statusLabel.Text = "Step 6/7: Deploying Secure Bridge & Skills..."
+            $progressBar.Value = 75
+            Write-Log "--- Importing Workflow & Deploying Skill ---"
+            
+            $PROJECT_ROOT = $PSScriptRoot
+            if (-not $PROJECT_ROOT) { $PROJECT_ROOT = (Get-Location).Path }
+            
+            # 1. Skill Deployment
+            $SKILL_DIR = "$env:USERPROFILE\.openclaw\skills"
+            if (-not (Test-Path $SKILL_DIR)) { New-Item -ItemType Directory -Force -Path $SKILL_DIR | Out-Null }
+            Copy-Item "$PROJECT_ROOT\n8n-delegate.md" -Destination "$SKILL_DIR\n8n-delegate.md" -Force
+            Write-Log "Skill deployed to $SKILL_DIR"
+ 
+            # 2. Workflow Import (via n8n CLI)
+            $cmdArgs = "/c n8n import:workflow --input=`"$PROJECT_ROOT\Secure-Agent-Bridge.json`" >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 7) {
+            $statusLabel.Text = "Step 7/7: Downloading AI Brain (Expect 5GB+ Download)"
+            $progressBar.Value = 90
+            Write-Log "--- Checking AI Model Status ---"
+
+            # Pre-check: Does model already exist?
+            $modelCheck = try { Invoke-Expression "ollama list" 2>$null | Select-String "llama3.2" } catch { $null }
+            if ($modelCheck) {
+                Write-Log "AI Brain (llama3.2) detected. Skipping download."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            Write-Log "--- Pulling Model llama3.2 (This will take a while) ---"
+            $cmdArgs = "/c ollama pull llama3.2 >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
+        }
+        elseif ($global:installStep -eq 8) {
+            # Step 8 Consolidated into Step 5 & 7
+            $global:installStep++
+            Start-NextStep
+            return
+        }
+        elseif ($global:installStep -eq 9) {
+            $statusLabel.Text = "Ready! Axiom Nexus Deployed."
+            $statusLabel.ForeColor = "Green"
+            $detailLabel.Text = "Launch via the 'Launch Axiom Nexus' shortcut."
+            $progressBar.Value = 100
+            $installButton.Text = "Finish"
+            $installButton.Enabled = $true
+            $timer.Stop()
+            $global:installStep = 999
+            Write-Log "`r`n--- Setup Complete ---"
+            Update-TextBox
+        }
+    }
+    catch {
+        $timer.Stop()
+        $statusLabel.Text = "Error at Step $($global:installStep)."
+        $statusLabel.ForeColor = "Red"
+        $detailLabel.Text = $_.Exception.Message
+        $installButton.Text = "Close"
+        $installButton.Enabled = $true
+        $global:installStep = 999
+        Update-TextBox
+    }
+}
+
+function Update-TextBox {
+    if (Test-Path $global:logFile) {
+        try {
+            $info = New-Object System.IO.FileInfo($global:logFile)
+            if ($info.Length -gt $global:lastFileSize) {
+                $fs = New-Object System.IO.FileStream($global:logFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                $fs.Seek($global:lastFileSize, [System.IO.SeekOrigin]::Begin) | Out-Null
+                $sr = New-Object System.IO.StreamReader($fs)
+                $newData = $sr.ReadToEnd()
+                $sr.Close()
+                $fs.Close()
+                $global:lastFileSize = $info.Length
+                if ($newData) {
+                    $incomingLines = $newData -split "`n"
+                    $cleanData = ""
+                    # Robust ANSI escape sequence filter
+                    $ansiRegex = "\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
+                    # Filter out progress spinners (- \ | /) and block characters
+                    $spamRegex = "^[\s\-\\\|/]+$|██|▒▒|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|pulling manifest|verifying sha256|writing manifest|success|npm warn"
+                    foreach ($line in $incomingLines) {
+                        $stripped = $line -replace $ansiRegex, ""
+                        if ($stripped.Trim() -notmatch $spamRegex) {
+                            $cleanData += $stripped + "`n"
+                        }
+                    }
+                    if ($cleanData.Trim() -ne "") { 
+                        $textBox.AppendText($cleanData) 
+                        # Auto-scroll to bottom
+                        $textBox.SelectionStart = $textBox.TextLength
+                        $textBox.ScrollToCaret()
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+}
+
+$timer.Add_Tick({
+        if ($global:installStep -eq 999) { return }
+        if ($global:installProcess -ne $null) {
+            $elapsed = ([datetime]::Now - $global:startTime)
+            $detailLabel.Text = "Time Elapsed: $('{0:mm\:ss}' -f $elapsed)"
+            Update-TextBox
+            if ($global:installProcess.HasExited) {
+                # Success codes: 0 (True Success), -1978335189/0x8A15003B/0x8A150036 (Already Installed/No Upgrade)
+                $successCodes = @(0, -1978335189, -1978335178)
+                $exitCode = $global:installProcess.ExitCode
+            
+                # Path Presence Checks (Overrides for grumpy exit codes)
+                $nodeExists = ($global:installStep -eq 1 -and ((Test-Path "C:\Program Files\nodejs\node.exe") -or (Get-Command node -ErrorAction SilentlyContinue)))
+                $ollamaPaths = @("$env:LOCALAPPDATA\Programs\Ollama\ollama.exe", "C:\Program Files\Ollama\ollama.exe")
+                $ollamaExists = ($global:installStep -eq 2 -and (($ollamaPaths | Where-Object { Test-Path $_ }) -or (Get-Command ollama -ErrorAction SilentlyContinue)))
+                
+                # Model Success Check (Step 7): If log says success or already exists, it is a success even with code 1
+                $lastLog = if (Test-Path $global:logFile) { Get-Content $global:logFile -Tail 5 | Out-String } else { "" }
+                $isModelSuccess = ($global:installStep -eq 7 -and ($lastLog -like "*success*" -or $lastLog -like "*already exists*"))
+                
+                $isPathSuccess = ($nodeExists -or $ollamaExists -or $isModelSuccess)
+
+                # Ignore exit codes 1 or 128 for tasks that often return false negatives
+                # Step 3 (Taskkill), Step 5 (NPM Install with skips), Step 6 (N8N Import), Step 7 (Ollama Pull)
+                $isIgnorable = (($exitCode -eq 1 -or $exitCode -eq 128) -and ($global:installStep -eq 3 -or $global:installStep -eq 5 -or $global:installStep -eq 6 -or $global:installStep -eq 7))
+                $isWingetSuccess = ($successCodes -contains $exitCode -and ($global:installStep -eq 1 -or $global:installStep -eq 2))
+            
+                if (-not ($exitCode -eq 0 -or $isIgnorable -or $isWingetSuccess -or $isPathSuccess)) {
+                    $timer.Stop()
+                    $statusLabel.Text = "Failed at Step $($global:installStep)."
+                    $statusLabel.ForeColor = "Red"
+                    $lastLog = if (Test-Path $global:logFile) { Get-Content $global:logFile -Tail 1 } else { "No log" }
+                    $detailLabel.Text = "Exit code $exitCode. Log: $lastLog"
+                    $installButton.Text = "Close"
+                    $installButton.Enabled = $true
+                    $global:installStep = 999
+                    return
+                }
+                $global:installProcess = $null
+                $global:installStep++
+                Start-NextStep
+            }
+        }
+    })
+
+$installButton.Add_Click({
+        try {
+            if ($global:installStep -eq 999) { $form.Close(); return }
+            $installButton.Enabled = $false
+        
+            # Safe Log Initialization
+            $global:logFile = "$env:USERPROFILE\Desktop\Axiom-Nexus-Log.txt"
+            $textBox.Text = "" # Clear UI log
+            $global:lastFileSize = 0
+        
+            try {
+                if (Test-Path $global:logFile) { 
+                    Remove-Item $global:logFile -Force -ErrorAction SilentlyContinue 
+                    if (Test-Path $global:logFile) { Clear-Content $global:logFile -ErrorAction SilentlyContinue }
+                }
+                " " | Out-File $global:logFile -Force # Ensure file exists for StreamReaders
+            }
+            catch { }
+
+            Write-Log "Starting Axiom Nexus Sovereign AI Suite Setup..."
+            $global:startTime = [datetime]::Now
+            $global:installStep = 1
+            Start-NextStep
+            $timer.Start()
+        }
+        catch {
+            $statusLabel.Text = "Fatal Startup Error."
+            $detailLabel.Text = $_.Exception.Message
+            $installButton.Enabled = $true
+            $installButton.Text = "Fail/Close"
+            $global:installStep = 999
+        }
+    })
+
+$form.ShowDialog() | Out-Null
+
+# SIG # Begin signature block
+# MIIFdgYJKoZIhvcNAQcCoIIFZzCCBWMCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
+# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUoa2b7X8WthAdvW24/LxTn7L0
+# osmgggMOMIIDCjCCAfKgAwIBAgIQE0cy1VHaN7tJftbFBRHhijANBgkqhkiG9w0B
+# AQsFADAdMRswGQYDVQQDDBJBeGlvbS1OZXh1cy1TZWN1cmUwHhcNMjYwMzA1MjEy
+# MDUyWhcNMjcwMzA1MjE0MDUyWjAdMRswGQYDVQQDDBJBeGlvbS1OZXh1cy1TZWN1
+# cmUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDqthNyYGdxkdmOfloS
+# BlsgQKXE1YUDr5Qt7ZmWqr44BLsK4UNu1E+Sa6yv1aIdX5VKW4HCIurfkj8pmS50
+# /sw79nrf4FYv2DStHHgJU9pW3L8aTkk16HQxXD/VV0EmiRAz7Fznx+W6JyEq5+pX
+# bSPAKJQY6SPX4AYrD7RibX/iclwae3DlWJNMfQyBLVIU1Y/yRPj0MmdHKqZtDIAW
+# yIlZCtCJPt36NP56t62uZHoKqN7xhEKV5gjYGgh+PMaXbUWd4DVRgLxp374WOYnv
+# NgoTeOnp3pNQhrLvvL5jZaDR+8+VpBP9f4S/aQwhBRS9BHL3qP8MvyeH+hfhZAhX
+# RiHRAgMBAAGjRjBEMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcD
+# AzAdBgNVHQ4EFgQUwsY5BjSAI3Wh23HaPCmkfermHZ4wDQYJKoZIhvcNAQELBQAD
+# ggEBABe7/poRzLR48vr1vtN5xhKWNmHQw08WbHOk4fm5S5lv1z6MyWKTodgM6W2J
+# TmM3/kXneiIPfybXdA2TCtbNO0exEC0sqoTnxvss+iHhj93YdqGhyUtvxmbpQJjK
+# V6mtqqmj65GUAbJWT2bQeO2m6ZYudxZ2UyfNr26daaAIPUIvoH45e6+4tS4QiIFb
+# pw950At1hpXaGHZMOv3DAgXPg08eCMCYFmC5kwIQ2YUj6UMa/laYFJTGUCOBiJwy
+# zuZj9xf0aE66F+Hf8s0s3s0Ro21OTCqAfNV8TwAsKzgSX/yA43/rxFVfblemD35z
+# puqmoiRfDAsXqB+QBF8H445DapMxggHSMIIBzgIBATAxMB0xGzAZBgNVBAMMEkF4
+# aW9tLU5leHVzLVNlY3VyZQIQE0cy1VHaN7tJftbFBRHhijAJBgUrDgMCGgUAoHgw
+# GAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGC
+# NwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG9w0BCQQx
+# FgQUdbjez2tW/PuWrr/Hh/fqlvppMpAwDQYJKoZIhvcNAQEBBQAEggEAasZSfAHz
+# Upcl69I5FihgjgHtKE0a5DmkOtNiu8Y5St7E7/AZguzoDAm2sXzO/Qb2R/wmtvt2
+# e22+iyLIbZ5iHlB4UrXP/s9fLLC3SIEcg9zF4rhzH6QGQERz/g+I4Z3cWLx6N43G
+# t5oThIxg/Pf4Fzu3lZ5WKFsy8Or73KnHQDz+wtgG22BImzutSY4g91zLL7x2ibgJ
+# 4c+GzAX4oYuDohYwHNpTBOZk2GDSXvF/3ZZ2tF2L9cFiiseUnYUty1v0DgadifWE
+# WEjTe4Vno95f65peOWPLDPoVJKGOC0CnaqRdprd5TEcwsAvCJmKdc8Tb9pFUMz6j
+# xa5p3+NBEQbQ5w==
+# SIG # End signature block

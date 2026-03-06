@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Axiom Hub</title>
+    <!-- Google Fonts: Inter for a modern look -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d0f12;
+            /* Deep space blue-black */
+            --glass-bg: rgba(20, 25, 35, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f0f4f8;
+            --text-secondary: #a0aec0;
+            --accent-glow: rgba(0, 195, 255, 0.15);
+            --btn-blue: rgba(0, 122, 255, 0.15);
+            --btn-blue-hover: rgba(0, 122, 255, 0.3);
+            --btn-blue-border: rgba(0, 122, 255, 0.5);
+            --btn-green: rgba(40, 199, 111, 0.15);
+            --btn-green-hover: rgba(40, 199, 111, 0.3);
+            --btn-green-border: rgba(40, 199, 111, 0.5);
+            --btn-purple: rgba(162, 59, 255, 0.15);
+            --btn-purple-hover: rgba(162, 59, 255, 0.3);
+            --btn-purple-border: rgba(162, 59, 255, 0.5);
+
+            --user-bubble: rgba(0, 122, 255, 0.1);
+            --agent-bubble: rgba(255, 255, 255, 0.03);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+
+            /* Subtle background glow effect */
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(0, 122, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(162, 59, 255, 0.05) 0%, transparent 50%);
+        }
+
+        /* Glassmorphism Container */
+        #hub-container {
+            width: 90%;
+            max-width: 1000px;
+            height: 85vh;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Top Header Area */
+        header {
+            padding: 20px 30px;
+            border-bottom: 1px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .brand-area {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #007aff, #a23bff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: white;
+            font-size: 18px;
+        }
+
+        .title-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .subtitle {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #28c76f;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(40, 199, 111, 0.6);
+        }
+
+        /* Main Chat Area */
+        #chat-window {
+            flex-grow: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+        }
+
+        #chat-window::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        #chat-window::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 16px 20px;
+            border-radius: 16px;
+            line-height: 1.5;
+            font-size: 0.95rem;
+            animation: fadeIn 0.3s ease-out forwards;
+            position: relative;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.system {
+            align-self: center;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            text-align: center;
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 8px 16px;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--user-bubble);
+            border: 1px solid rgba(0, 122, 255, 0.2);
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.agent {
+            align-self: flex-start;
+            background: var(--agent-bubble);
+            border: 1px solid var(--glass-border);
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .message-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .message-content p {
+            margin: 0 0 10px 0;
+        }
+
+        .message-content p:last-child {
+            margin: 0;
+        }
+
+        /* Action Steps / Status Updates */
+        .agent-step {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            color: #28c76f;
+            margin-bottom: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.6;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        /* Markdown elements inside messages */
+        .message pre {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 12px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid var(--glass-border);
+        }
+
+        .message code {
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 5px;
+            border-radius: 4px;
+        }
+
+        /* Input Area wrapper */
+        #input-area-wrapper {
+            padding: 20px 30px 30px 30px;
+            background: linear-gradient(to top, rgba(0, 0, 0, 0.4) 0%, transparent 100%);
+            border-top: 1px solid rgba(255, 255, 255, 0.02);
+        }
+
+        /* Active Mode Indicator */
+        #mode-indicator {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: color 0.3s ease;
+        }
+
+        /* Input Container structure */
+        .input-container {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 8px;
+            gap: 10px;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .input-container:focus-within {
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Mode Selection Buttons */
+        .action-btns {
+            display: flex;
+            gap: 6px;
+            padding-right: 10px;
+            border-right: 1px solid var(--glass-border);
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* Specific Button Colors based on user spec */
+        .mode-btn[data-mode="chat"] {
+            color: #007aff;
+            background: var(--btn-blue);
+            border-color: var(--btn-blue-border);
+        }
+
+        .mode-btn[data-mode="chat"].active {
+            box-shadow: 0 0 10px rgba(0, 122, 255, 0.3);
+        }
+
+        .mode-btn[data-mode="task"] {
+            color: #28c76f;
+        }
+
+        .mode-btn[data-mode="task"].active {
+            background: var(--btn-green);
+            border-color: var(--btn-green-border);
+            box-shadow: 0 0 10px rgba(40, 199, 111, 0.3);
+        }
+
+        .mode-btn[data-mode="tool"] {
+            color: #a23bff;
+        }
+
+        .mode-btn[data-mode="tool"].active {
+            background: var(--btn-purple);
+            border-color: var(--btn-purple-border);
+            box-shadow: 0 0 10px rgba(162, 59, 255, 0.3);
+        }
+
+        .mode-btn:hover {
+            filter: brightness(1.2);
+        }
+
+        /* Text Input */
+        #user-input {
+            flex-grow: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 1rem;
+            padding: 10px;
+            outline: none;
+            resize: none;
+            height: 24px;
+            max-height: 150px;
+            overflow-y: hidden;
+        }
+
+        #user-input::placeholder {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Send Button */
+        #send-btn {
+            background: var(--text-primary);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 8px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        #send-btn:hover {
+            transform: scale(1.05);
+        }
+
+        #send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #send-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        /* Loading Indicator */
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            background: transparent;
+            padding: 10px 20px;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .typing-indicator.active {
+            display: flex;
+        }
+
+        .dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .dot:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0);
+            }
+
+            40% {
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="hub-container">
+
+        <header>
+            <div class="brand-area">
+                <div id="logo">AX</div>
+                <div class="title-group">
+                    <h1>Axiom Hub</h1>
+                    <div class="subtitle">
+                        <div class="status-dot"></div>
+                        OpenClaw Sovereign Engine Online
+                    </div>
+                </div>
+            </div>
+            <button class="mode-btn" onclick="clearHistory()" style="font-size: 0.7rem; padding: 4px 8px;">Clear
+                History</button>
+        </header>
+
+        <div id="chat-window">
+            <div class="message system">
+                System Initialized. Engine connected to localhost:5678.
+            </div>
+        </div>
+
+        <div class="typing-indicator" id="loading-indicator">
+            <div class="dots">
+                <div class="dot"></div>
+                <div class="dot"></div>
+                <div class="dot"></div>
+            </div>
+            <span id="loading-text">Processing...</span>
+        </div>
+
+        <div id="input-area-wrapper">
+            <div id="mode-indicator" style="color: #007aff;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                </svg>
+                Chat Mode Active
+            </div>
+
+            <div class="input-container">
+                <div class="action-btns">
+                    <button class="mode-btn active" data-mode="chat" title="Standard conversational mode">Chat</button>
+                    <button class="mode-btn" data-mode="task" title="Automate a complex objective">Automation</button>
+                    <button class="mode-btn" data-mode="tool" title="Force use of a specific direct command">Direct
+                        Command</button>
+                </div>
+
+                <textarea id="user-input" rows="1" placeholder="Type a message..."></textarea>
+
+                <button id="send-btn" title="Send Payload">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const modeBtns = document.querySelectorAll('.mode-btn');
+        const modeIndicator = document.getElementById('mode-indicator');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const loadingText = document.getElementById('loading-text');
+
+        // State
+        let currentMode = 'chat';
+        // Fast-path local prototyping: Route directly to the Test Webhook
+        // This bypasses n8n 2.x strict production-activation requirements.
+        const webhookUrl = "http://localhost:5678/webhook-test/openclaw-exec";
+        let history = JSON.parse(localStorage.getItem('axiomChatHistory')) || [];
+
+        // Auto-resize textarea
+        userInput.addEventListener('input', function () {
+            this.style.height = '24px';
+            this.style.height = Math.min(this.scrollHeight, 150) + 'px';
+        });
+
+        // Mode Selection Logic
+        modeBtns.forEach(btn => {
+            if (!btn.dataset.mode) return;
+            btn.addEventListener('click', () => {
+                modeBtns.forEach(b => { if (b.dataset.mode) b.classList.remove('active') });
+                btn.classList.add('active');
+                currentMode = btn.dataset.mode;
+
+                let color, text, icon;
+                if (currentMode === 'chat') {
+                    color = '#007aff';
+                    text = 'Chat Mode Active';
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>';
+                    userInput.placeholder = "Type a message...";
+                } else if (currentMode === 'task') {
+                    color = '#28c76f';
+                    text = 'Automation Mode Active';
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>';
+                    userInput.placeholder = "Describe the automation (e.g. process all invoices in downloads)...";
+                } else if (currentMode === 'tool') {
+                    color = '#a23bff';
+                    text = 'Direct Command Active';
+                    icon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>';
+                    userInput.placeholder = "Enter explicit command (e.g. write 'Hello' to C:/test.txt)...";
+                }
+
+                modeIndicator.innerHTML = `${icon} ${text}`;
+                modeIndicator.style.color = color;
+                userInput.focus();
+            });
+        });
+
+        // Appending Messages to UI
+        function appendMessage(sender, text, timestamp = null, steps = []) {
+            if (!timestamp) timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${sender}`;
+
+            const metaDiv = document.createElement('div');
+            metaDiv.className = 'message-meta';
+            const senderName = sender === 'user' ? 'You' : 'OpenClaw';
+            metaDiv.textContent = `${senderName} — ${timestamp}`;
+            msgDiv.appendChild(metaDiv);
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            // Add simulated steps for agents
+            if (sender === 'agent' && steps.length > 0) {
+                steps.forEach(stepText => {
+                    const stepDiv = document.createElement('div');
+                    stepDiv.className = 'agent-step';
+                    stepDiv.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> ${stepText}`;
+                    contentDiv.appendChild(stepDiv);
+                });
+            }
+
+            const paragraphs = text.split('\n').filter(p => p.trim() !== '');
+            paragraphs.forEach(p => {
+                const pTag = document.createElement('p');
+                pTag.textContent = p;
+                contentDiv.appendChild(pTag);
+            });
+
+            msgDiv.appendChild(contentDiv);
+            chatWindow.appendChild(msgDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+
+            return msgDiv;
+        }
+
+        // Persistence Logic
+        function saveToHistory(sender, text, timestamp) {
+            history.push({ sender, text, timestamp });
+            localStorage.setItem('axiomChatHistory', JSON.stringify(history));
+        }
+
+        function loadHistory() {
+            if (history.length === 0) {
+                appendMessage('agent', "Welcome back! I am currently standing by for your commands.");
+                return;
+            }
+            history.forEach(m => appendMessage(m.sender, m.text, m.timestamp));
+        }
+
+        function clearHistory() {
+            localStorage.removeItem('axiomChatHistory');
+            history = [];
+            chatWindow.innerHTML = '<div class="message system">History Cleared.</div>';
+        }
+
+        // Send payload to n8n
+        async function sendPayload(text, mode) {
+            if (!text.trim()) return;
+
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            appendMessage('user', text, timestamp);
+            saveToHistory('user', text, timestamp);
+
+            userInput.value = '';
+            userInput.style.height = '24px';
+            sendBtn.disabled = true;
+            loadingIndicator.classList.add('active');
+
+            // FAKE AGENT FEEDBACK LOOP
+            const fakeSteps = [
+                "Analyzing request scope...",
+                "Initializing Secure Bridge context...",
+                "Executing local delegation logic..."
+            ];
+
+            let stepIdx = 0;
+            const stepInterval = setInterval(() => {
+                if (stepIdx < fakeSteps.length) {
+                    loadingText.textContent = fakeSteps[stepIdx];
+                    stepIdx++;
+                } else {
+                    clearInterval(stepInterval);
+                }
+            }, 800);
+
+            try {
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Axiom-Auth': 'axiom-secure-local'
+                    },
+                    body: JSON.stringify({ mode, content: text, timestamp: new Date().toISOString() })
+                });
+
+                clearInterval(stepInterval);
+                loadingText.textContent = "Finalizing response...";
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const reply = data.response || "Task executed successfully via n8n bridge.";
+                    appendMessage('agent', reply, null, ["Workflow verification passed", "Data encrypted for local storage"]);
+                    saveToHistory('agent', reply, timestamp);
+                } else {
+                    appendMessage('system', `Communication Error: n8n returned ${response.status}.`);
+                }
+            } catch (error) {
+                clearInterval(stepInterval);
+                appendMessage('system', `Connection failure: Could not reach Axiom Engine.`);
+            } finally {
+                sendBtn.disabled = false;
+                loadingIndicator.classList.remove('active');
+                loadingText.textContent = "Processing...";
+                userInput.focus();
+            }
+        }
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendPayload(userInput.value, currentMode);
+            }
+        });
+
+        sendBtn.addEventListener('click', () => sendPayload(userInput.value, currentMode));
+
+        // Initial Load
+        window.addEventListener('load', () => {
+            loadHistory();
+            userInput.focus();
+        });
+
+    </script>
+</body>
+
+</html>

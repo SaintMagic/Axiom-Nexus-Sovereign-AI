@@ -1,0 +1,109 @@
+[
+    {
+        "id": "4",
+        "name": "Axiom Invoice Processor",
+        "nodes": [
+            {
+                "parameters": {
+                    "postImportAction": "nothing",
+                    "options": {}
+                },
+                "id": "e1f2a3b4-c5d6-4a7b-8c9d-0e1f2a3b4c5d",
+                "name": "IMAP Email Read (Inbox)",
+                "type": "n8n-nodes-base.emailReadImap",
+                "typeVersion": 1,
+                "position": [
+                    100,
+                    300
+                ]
+            },
+            {
+                "parameters": {
+                    "operation": "extract",
+                    "options": {}
+                },
+                "id": "f2a3b4c5-d6e7-4f8a-9b0c-1d2e3f4a5b6c",
+                "name": "Extract PDF Attachment",
+                "type": "n8n-nodes-base.extractFromFile",
+                "typeVersion": 1,
+                "position": [
+                    300,
+                    300
+                ]
+            },
+            {
+                "parameters": {
+                    "model": "llama3.2",
+                    "prompt": "=Extract data from this invoice content: {{$json.text}}. Respond ONLY in JSON with these keys: vendor, date, invoice_number, total_amount, vat.",
+                    "options": {
+                        "format": "json"
+                    }
+                },
+                "id": "a3b4c5d6-e7f8-4a9b-0c1d-2e3f4a5b6c7d",
+                "name": "AI Data Extraction",
+                "type": "n8n-nodes-base.ollama",
+                "typeVersion": 1,
+                "position": [
+                    500,
+                    300
+                ]
+            },
+            {
+                "parameters": {
+                    "operation": "append",
+                    "fileName": "Managed_Stack_Data/axiom_invoices.csv",
+                    "dataPropertyName": "={{$json.response}}",
+                    "options": {}
+                },
+                "id": "b4c5d6e7-f8a9-4b0c-1d2e-3f4a5b6c7d8e",
+                "name": "Log to CSV",
+                "type": "n8n-nodes-base.readWriteFile",
+                "typeVersion": 1,
+                "position": [
+                    700,
+                    300
+                ]
+            }
+        ],
+        "connections": {
+            "IMAP Email Read (Inbox)": {
+                "main": [
+                    [
+                        {
+                            "node": "Extract PDF Attachment",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Extract PDF Attachment": {
+                "main": [
+                    [
+                        {
+                            "node": "AI Data Extraction",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "AI Data Extraction": {
+                "main": [
+                    [
+                        {
+                            "node": "Log to CSV",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            }
+        },
+        "settings": {},
+        "staticData": null,
+        "meta": null,
+        "pinData": {},
+        "active": true
+    }
+]

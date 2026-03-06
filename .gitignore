@@ -1,0 +1,31 @@
+# n8n Node Modules
+node_modules/
+dist/
+
+# Obsolete Folders
+old/
+versioning/
+
+# OS/IDE junk
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# n8n Data/DB (Should not be in repo)
+.n8n/
+database.sqlite*
+*.log
+
+# Temp/Installer junk
+*.zip
+*.tgz
+*.exe
+!n8n-nodes-local-ai-manager-*.tgz # Keep the packaged node if needed for offline install? 
+# Actually user said "only files that are not obsolete". 
+# The .tgz is technically what we use to install. But the source is better.
+# I will exclude .tgz for now as the source folder exists.
+
+# Project Backup/Legacy
+backup/
+*.bak

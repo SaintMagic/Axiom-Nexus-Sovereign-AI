@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "n8n-nodes-deeptech-data-validation": "^1.0.5"
+  }
+}

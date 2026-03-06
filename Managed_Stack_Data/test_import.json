@@ -1,0 +1,84 @@
+{
+    "id":  "test_id",
+    "name":  "Test Workflow",
+    "versionId":  "db8e3bb3-a5f1-460d-a342-fd82531636c2",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "write_file"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and",
+                                                                                             "options":  {
+                                                                                                             "type":  "string",
+                                                                                                             "leftValue":  "",
+                                                                                                             "caseSensitive":  true
+                                                                                                         }
+                                                                                         },
+                                                                          "outputIndex":  0
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "read_file"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and",
+                                                                                             "options":  {
+                                                                                                             "type":  "string",
+                                                                                                             "leftValue":  "",
+                                                                                                             "caseSensitive":  true
+                                                                                                         }
+                                                                                         },
+                                                                          "outputIndex":  1
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "leftValue":  "={{ $json.action }}",
+                                                                                                                    "operator":  "equal",
+                                                                                                                    "rightValue":  "list_directory"
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and",
+                                                                                             "options":  {
+                                                                                                             "type":  "string",
+                                                                                                             "leftValue":  "",
+                                                                                                             "caseSensitive":  true
+                                                                                                         }
+                                                                                         },
+                                                                          "outputIndex":  2
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "f6a7b8c9-d0e1-4f2a-b3c4-d5e6f7a8b9c0",
+                      "name":  "Tool Hub",
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  1,
+                      "position":  [
+                                       1000,
+                                       200
+                                   ]
+                  }
+              ],
+    "connections":  {
+
+                    },
+    "active":  false
+}

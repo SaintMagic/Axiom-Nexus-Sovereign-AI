@@ -1,0 +1,37 @@
+= AXIOM NEXUS - DEPLOYMENT & SECURITY GUIDE =
+
+Welcome to the Axiom Nexus Sovereign AI Suite. This platform provides a secure, local-first environment for autonomous agent operations.
+
+** DEPLOYMENT **
+1. Extract this entire zip folder to your Desktop.
+2. Double-click "Install Axiom Nexus" to begin the guided setup.
+3. Once finished, double-click "Launch Axiom Nexus" to start the stack.
+
+** FIRST-RUN SETUP **
+1. OWNER ACCOUNT: Setting up an account is a MANDATORY local security step. Enter an email (can be generic e.g. admin@local) and password to secure your personal AI agent vault.
+2. PERSONALIZATION: You will be asked a few questions to tailor the interface. This is used by n8n to hide/show relevant node documentation.
+3. LICENSE KEY (OPTIONAL): You will be offered a free license key. 
+   - IF YOU SKIP: All AI Agents work 100%, but Workflow Folders and Execution Search will be disabled.
+   - IF YOU GET KEY: You unlock Folders, Tags, and Advanced Search for your workflows.
+4. SUMMARY: Everything is stored locally on your PC. No data leaves the suite without your workflow's permission.
+
+** MANAGEMENT **
+- To launch: Use the "Launch Axiom Nexus" shortcut.
+- To remove: Use the "Uninstall Axiom Nexus" shortcut.
+- Internal Files: All system logic resides in the 'Managed_Stack_Data' folder.
+
+** SECURITY & TRUST **
+All suite scripts are digitally signed with the "Axiom-Nexus-Secure" certificate. If Windows/Bitdefender shows a warning, it is because this is a private certificate. Click 'More Info' and then 'Run Anyway' to trust the suite.
+
+** ADVANCED **
+- The n8n engine is pre-configured with the "Axiom Security Bridge" workflow.
+- OpenClaw Reasoning Engine uses the 'n8n-delegate' skill for tool execution.
+- Locally managed at http://localhost:5678.
+
+** ANTIVIRUS TROUBLESHOOTING (Bitdefender/Defender) **
+If your antivirus flags "Install Axiom Nexus" or "Launch Axiom Nexus":
+1. Open your AV (e.g. Bitdefender) -> Quarantined Files.
+2. Restore the Axiom Nexus files.
+3. Add the 'Managed_Stack_Data' folder to your AV Exclusions/Safe list.
+4. Windows often flags scripts that stop services (Ollama) as suspicious, but this is required for the update logic to function.
+

@@ -1,0 +1,318 @@
+{
+    "name": "Axiom Tool Router",
+    "nodes": [
+        {
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "openclaw-exec",
+                "options": {}
+            },
+            "id": "1",
+            "name": "Webhook",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 1,
+            "position": [
+                100,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "rules": {
+                    "values": [
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "={{$json.body.action}}",
+                                    "type": "string"
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{$json.body.action}}",
+                                        "operator": "equal",
+                                        "rightValue": "write_file"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "outputIndex": 0
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "={{$json.body.action}}",
+                                    "type": "string"
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{$json.body.action}}",
+                                        "operator": "equal",
+                                        "rightValue": "read_file"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "outputIndex": 1
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "={{$json.body.action}}",
+                                    "type": "string"
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{$json.body.action}}",
+                                        "operator": "equal",
+                                        "rightValue": "scrape_url"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "outputIndex": 2
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "={{$json.body.action}}",
+                                    "type": "string"
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{$json.body.action}}",
+                                        "operator": "equal",
+                                        "rightValue": "invoice_process"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "outputIndex": 3
+                        },
+                        {
+                            "conditions": {
+                                "options": {
+                                    "caseSensitive": true,
+                                    "leftValue": "={{$json.body.action}}",
+                                    "type": "string"
+                                },
+                                "conditions": [
+                                    {
+                                        "leftValue": "={{$json.body.action}}",
+                                        "operator": "equal",
+                                        "rightValue": "auto_filer"
+                                    }
+                                ],
+                                "combinator": "and"
+                            },
+                            "outputIndex": 4
+                        }
+                    ]
+                },
+                "options": {}
+            },
+            "id": "2",
+            "name": "Action Router",
+            "type": "n8n-nodes-base.switch",
+            "typeVersion": 1,
+            "position": [
+                400,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "write-file-id",
+                "options": {}
+            },
+            "id": "3",
+            "name": "Trigger: Write File",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                700,
+                100
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "read-file-id",
+                "options": {}
+            },
+            "id": "4",
+            "name": "Trigger: Read File",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                700,
+                200
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "scrape-url-id",
+                "options": {}
+            },
+            "id": "5",
+            "name": "Trigger: Scrape URL",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                700,
+                300
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "invoice-processor-id",
+                "options": {}
+            },
+            "id": "6",
+            "name": "Trigger: Invoice Proc",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                700,
+                400
+            ]
+        },
+        {
+            "parameters": {
+                "workflowId": "auto-filer-id",
+                "options": {}
+            },
+            "id": "7",
+            "name": "Trigger: Auto Filer",
+            "type": "n8n-nodes-base.executeWorkflow",
+            "typeVersion": 1,
+            "position": [
+                700,
+                500
+            ]
+        },
+        {
+            "parameters": {
+                "respondWith": "allIncomingItems",
+                "options": {}
+            },
+            "id": "8",
+            "name": "Respond with Result",
+            "type": "n8n-nodes-base.respondToWebhook",
+            "typeVersion": 1,
+            "position": [
+                1000,
+                300
+            ]
+        }
+    ],
+    "connections": {
+        "Webhook": {
+            "main": [
+                [
+                    {
+                        "node": "Action Router",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Action Router": {
+            "main": [
+                [
+                    {
+                        "node": "Trigger: Write File",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Trigger: Read File",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Trigger: Scrape URL",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Trigger: Invoice Proc",
+                        "type": "main",
+                        "index": 0
+                    }
+                ],
+                [
+                    {
+                        "node": "Trigger: Auto Filer",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Trigger: Write File": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Trigger: Read File": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Trigger: Scrape URL": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Trigger: Invoice Proc": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Trigger: Auto Filer": {
+            "main": [
+                [
+                    {
+                        "node": "Respond with Result",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

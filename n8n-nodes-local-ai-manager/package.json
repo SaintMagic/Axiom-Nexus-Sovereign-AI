@@ -1,0 +1,38 @@
+{
+    "name": "n8n-nodes-local-ai-manager",
+    "version": "0.1.0",
+    "description": "Custom n8n node to interact with local Ollama instance",
+    "keywords": [
+        "n8ncommunity-node-package"
+    ],
+    "license": "MIT",
+    "homepage": "https://n8n.io",
+    "author": {
+        "name": "Local AI Master",
+        "email": "demo@example.com"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/n8n-io/n8n-nodes-local-ai-manager.git"
+    },
+    "main": "dist/nodes/LocalAiManager/LocalAiManager.node.js",
+    "scripts": {
+        "build": "tsc"
+    },
+    "files": [
+        "dist"
+    ],
+    "n8n": {
+        "n8nNodesApiVersion": 1,
+        "nodes": [
+            "dist/nodes/LocalAiManager/LocalAiManager.node.js"
+        ]
+    },
+    "devDependencies": {
+        "n8n-workflow": "^1.60.0",
+        "typescript": "^5.0.0"
+    },
+    "peerDependencies": {
+        "n8n-workflow": "^1.60.0"
+    }
+}
