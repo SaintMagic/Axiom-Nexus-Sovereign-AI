@@ -124,7 +124,7 @@
                   {
                       "id":  "node-tool-parse",
                       "name":  "Ollama Tool Parse",
-                      "type":  "n8n-nodes-local-ai-manager.localAiManager",
+                      "type":  "localAiManager",
                       "typeVersion":  1,
                       "position":  [
                                        600,
@@ -372,7 +372,7 @@
                   {
                       "id":  "node-ollama-task",
                       "name":  "Ollama Task Mode",
-                      "type":  "n8n-nodes-local-ai-manager.localAiManager",
+                      "type":  "localAiManager",
                       "typeVersion":  1,
                       "position":  [
                                        600,
@@ -409,7 +409,7 @@
                   {
                       "id":  "node-chat",
                       "name":  "Ollama Chat",
-                      "type":  "n8n-nodes-local-ai-manager.localAiManager",
+                      "type":  "localAiManager",
                       "typeVersion":  1,
                       "position":  [
                                        600,
