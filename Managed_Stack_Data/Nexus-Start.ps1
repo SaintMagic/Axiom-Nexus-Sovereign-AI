@@ -22,7 +22,15 @@ Get-Process -Name "node", "n8n" -ErrorAction SilentlyContinue | Where-Object {
 $env:N8N_PORT = 5678
 # Shielding against Windows DB permission quirks in v2
 $env:N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS = "false"
+
 # We avoid setting N8N_HOST/PROTOCOL to allow n8n to auto-detect the UI routes correctly
+$env:N8N_DIAGNOSTICS_ENABLED = "false"
+$env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
+
+# Load the custom node directly from the local disk, bypassing the community node npm registry
+$customNodePath = Resolve-Path (Join-Path $PSScriptRoot "..\n8n-nodes-local-ai-manager")
+$env:N8N_CUSTOM_EXTENSIONS = $customNodePath.Path
+
 Write-Host "Initializing Axiom Nexus Engine..." -ForegroundColor Cyan
 Start-Process cmd.exe -ArgumentList "/c n8n start" -WindowStyle Hidden
 

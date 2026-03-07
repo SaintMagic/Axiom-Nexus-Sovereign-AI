@@ -127,6 +127,15 @@ $form.Add_Shown({
         $env:WEBHOOK_URL = "http://localhost:5678/"
         $env:N8N_CORS_ALLOWED_ORIGINS = "*"
         $env:N8N_CORS_ALLOWED_HEADERS = "*"
+        
+        # Disable auto-update checks and analytics that might trigger npm lookups
+        $env:N8N_DIAGNOSTICS_ENABLED = "false"
+        $env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
+        
+        # Load the custom node directly from the local disk, bypassing the community node npm registry
+        $customNodePath = Resolve-Path (Join-Path $PSScriptRoot "..\n8n-nodes-local-ai-manager")
+        $env:N8N_CUSTOM_EXTENSIONS = $customNodePath.Path
+        
         Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$logFile`" 2>&1" -WindowStyle Hidden
     
         $timer.Start()
