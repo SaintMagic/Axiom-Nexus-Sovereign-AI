@@ -15,9 +15,9 @@
         "type": "git",
         "url": "git+https://github.com/n8n-io/n8n-nodes-local-ai-manager.git"
     },
-    "main": "dist/LocalAiManager.node.js",
+    "main": "dist/nodes/LocalAiManager/LocalAiManager.node.js",
     "scripts": {
-        "build": "tsc && powershell -Command \"Copy-Item -Path 'nodes/LocalAiManager/robot.svg' -Destination 'dist/' -Force\""
+        "build": "tsc && powershell -Command \"if (!(Test-Path 'dist/nodes/LocalAiManager')) { New-Item -ItemType Directory -Path 'dist/nodes/LocalAiManager' -Force }; Copy-Item -Path 'src/nodes/LocalAiManager/robot.svg' -Destination 'dist/nodes/LocalAiManager/' -Force\""
     },
     "files": [
         "dist"
@@ -25,7 +25,7 @@
     "n8n": {
         "n8nNodesApiVersion": 1,
         "nodes": [
-            "dist/LocalAiManager.node.js"
+            "dist/nodes/LocalAiManager/LocalAiManager.node.js"
         ]
     },
     "devDependencies": {
