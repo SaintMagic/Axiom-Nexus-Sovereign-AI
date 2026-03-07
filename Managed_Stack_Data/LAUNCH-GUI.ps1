@@ -132,15 +132,6 @@ $form.Add_Shown({
         $env:N8N_DIAGNOSTICS_ENABLED = "false"
         $env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
         
-        # --- THE CLEAN-ROOM EXTENSION PROTOCOL (V5) ---
-        # Pointing N8N_CUSTOM_EXTENSIONS to the package root so it can read package.json
-        $extPath = "C:\Fiverr gigs\N8N promo project\n8n-nodes-local-ai-manager"
-        $env:N8N_CUSTOM_EXTENSIONS = $extPath
-        
-        # Forced Cache Clear
-        Remove-Item "C:\Users\Martin\.n8n\nodes" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "C:\Users\Martin\.n8n\custom" -Recurse -Force -ErrorAction SilentlyContinue
-        
         Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$logFile`" 2>&1" -WindowStyle Hidden
     
         $timer.Start()
