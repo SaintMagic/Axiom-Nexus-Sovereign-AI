@@ -30,16 +30,18 @@
             --agent-bubble: rgba(255, 255, 255, 0.03);
         }
 
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+        }
+
         body {
             margin: 0;
             padding: 0;
             font-family: 'Inter', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-primary);
-            height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             overflow: hidden;
 
             /* Subtle background glow effect */
@@ -50,15 +52,15 @@
 
         /* Glassmorphism Container */
         #hub-container {
-            width: 90%;
-            max-width: 1000px;
-            height: 85vh;
+            width: 100vw;
+            max-width: none;
+            height: 100vh;
             background: var(--glass-bg);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5),
+            border-radius: 0;
+            box-shadow: 0 0 0 rgba(0, 0, 0, 0),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
             display: flex;
@@ -122,6 +124,29 @@
             background-color: #28c76f;
             border-radius: 50%;
             box-shadow: 0 0 10px rgba(40, 199, 111, 0.6);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .header-btn:hover {
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
         }
 
         /* Main Chat Area */
@@ -463,8 +488,10 @@
                     </div>
                 </div>
             </div>
-            <button class="mode-btn" onclick="clearHistory()" style="font-size: 0.7rem; padding: 4px 8px;">Clear
-                History</button>
+            <div class="header-actions">
+                <button id="export-debug-btn" class="header-btn" title="Export chat and debug trace as JSON">Export Debug</button>
+                <button id="clear-history-btn" class="header-btn">Clear History</button>
+            </div>
         </header>
 
         <div id="chat-window">
@@ -519,6 +546,8 @@
         const modeIndicator = document.getElementById('mode-indicator');
         const loadingIndicator = document.getElementById('loading-indicator');
         const loadingText = document.getElementById('loading-text');
+        const clearHistoryBtn = document.getElementById('clear-history-btn');
+        const exportDebugBtn = document.getElementById('export-debug-btn');
 
         // State
         let currentMode = 'chat';
@@ -528,6 +557,7 @@
             "http://127.0.0.1:5678/webhook-test/axiom-router-exec"
         ];
         let history = JSON.parse(localStorage.getItem('axiomChatHistory')) || [];
+        let debugTrace = JSON.parse(localStorage.getItem('axiomDebugTrace')) || [];
 
         // Auto-resize textarea
         userInput.addEventListener('input', function () {
@@ -607,10 +637,56 @@
             return msgDiv;
         }
 
-        // Persistence Logic
-        function saveToHistory(sender, text, timestamp) {
-            history.push({ sender, text, timestamp });
+        // Persistence + Debug Trace Logic
+        function saveToHistory(sender, text, timestamp, steps = [], meta = {}) {
+            history.push({
+                sender,
+                text,
+                timestamp,
+                steps: Array.isArray(steps) ? steps : [],
+                meta: (meta && typeof meta === 'object') ? meta : {}
+            });
             localStorage.setItem('axiomChatHistory', JSON.stringify(history));
+        }
+
+        function saveDebugTrace(kind, data = {}) {
+            const event = {
+                kind,
+                timestamp: new Date().toISOString(),
+                ...data,
+            };
+            debugTrace.push(event);
+            if (debugTrace.length > 1000) {
+                debugTrace = debugTrace.slice(-1000);
+            }
+            localStorage.setItem('axiomDebugTrace', JSON.stringify(debugTrace));
+        }
+
+        function exportDebugSnapshot() {
+            const now = new Date();
+            const stamp = now.toISOString().replace(/[:.]/g, '-');
+            const payload = {
+                exportedAt: now.toISOString(),
+                app: 'Axiom Hub',
+                note: 'Contains visible workflow trace and debug metadata. Hidden model internals are not available.',
+                currentMode,
+                webhookUrls,
+                chatHistory: history,
+                debugTrace,
+            };
+
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `axiom-debug-export-${stamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            appendMessage('system', 'Debug export created.');
+            saveToHistory('system', 'Debug export created.', new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         }
 
         function loadHistory() {
@@ -618,17 +694,20 @@
                 appendMessage('agent', "Welcome back! I am currently standing by for your commands.");
                 return;
             }
-            history.forEach(m => appendMessage(m.sender, m.text, m.timestamp));
+            history.forEach(m => appendMessage(m.sender, m.text, m.timestamp, Array.isArray(m.steps) ? m.steps : []));
         }
 
         function clearHistory() {
             localStorage.removeItem('axiomChatHistory');
+            localStorage.removeItem('axiomDebugTrace');
             history = [];
+            debugTrace = [];
             chatWindow.innerHTML = '<div class="message system">History Cleared.</div>';
         }
 
         async function postToWebhook(payload) {
             let lastResponse = null;
+            let lastResponseUrl = '';
             let lastError = null;
 
             for (const webhookUrl of webhookUrls) {
@@ -647,13 +726,14 @@
                     });
 
                     lastResponse = response;
+                    lastResponseUrl = webhookUrl;
 
                     // If production webhook is not active, try test webhook automatically.
                     if (response.status === 404) {
                         continue;
                     }
 
-                    return response;
+                    return { response, webhookUrl };
                 } catch (error) {
                     lastError = error;
                 } finally {
@@ -661,7 +741,7 @@
                 }
             }
 
-            if (lastResponse) return lastResponse;
+            if (lastResponse) return { response: lastResponse, webhookUrl: lastResponseUrl };
             if (lastError) throw lastError;
             throw new Error("No webhook endpoint available.");
         }
@@ -673,6 +753,22 @@
             const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             appendMessage('user', text, timestamp);
             saveToHistory('user', text, timestamp);
+            saveDebugTrace('user_request', {
+                mode,
+                content: text,
+                historyCount: history.length,
+            });
+
+            const requestPayload = {
+                mode,
+                content: text,
+                timestamp: new Date().toISOString(),
+                history: history.slice(-20).map((m) => ({
+                    sender: m.sender,
+                    text: m.text,
+                    timestamp: m.timestamp,
+                })),
+            };
 
             userInput.value = '';
             userInput.style.height = '24px';
@@ -685,6 +781,7 @@
                 "Initializing Secure Bridge context...",
                 "Executing local delegation logic..."
             ];
+            saveDebugTrace('local_thinking_steps', { steps: fakeSteps });
 
             let stepIdx = 0;
             const stepInterval = setInterval(() => {
@@ -696,20 +793,19 @@
                 }
             }, 800);
 
+            const startedAt = Date.now();
+
             try {
-                const response = await postToWebhook({
-                    mode,
-                    content: text,
-                    timestamp: new Date().toISOString(),
-                    history: history.slice(-20).map((m) => ({
-                        sender: m.sender,
-                        text: m.text,
-                        timestamp: m.timestamp,
-                    })),
-                });
+                const { response, webhookUrl } = await postToWebhook(requestPayload);
 
                 clearInterval(stepInterval);
                 loadingText.textContent = "Finalizing response...";
+                saveDebugTrace('webhook_response_meta', {
+                    webhookUrl,
+                    status: response.status,
+                    ok: response.ok,
+                    latencyMs: Date.now() - startedAt,
+                });
 
                 if (response.ok) {
                     const rawText = await response.text();
@@ -740,25 +836,78 @@
                         reply = data;
                     }
 
+                    saveDebugTrace('webhook_response_body', {
+                        webhookUrl,
+                        status: response.status,
+                        rawText: String(rawText || '').slice(0, 12000),
+                        parsedType: Array.isArray(data) ? 'array' : typeof data,
+                        extractedReply: reply,
+                    });
+
                     if (reply) {
-                        appendMessage('agent', reply, null, ["Workflow verification passed", "Data encrypted for local storage"]);
-                        saveToHistory('agent', reply, timestamp);
+                        const agentSteps = ["Workflow verification passed", "Data encrypted for local storage"];
+                        const replyTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        appendMessage('agent', reply, replyTimestamp, agentSteps);
+                        saveToHistory('agent', reply, replyTimestamp, agentSteps, {
+                            webhookUrl,
+                            latencyMs: Date.now() - startedAt,
+                        });
+                        saveDebugTrace('agent_reply', {
+                            steps: agentSteps,
+                            reply,
+                            webhookUrl,
+                        });
                     } else {
-                        appendMessage('system', "Workflow accepted the request, but no response payload was returned yet.");
+                        const systemMsg = "Workflow accepted the request, but no response payload was returned yet.";
+                        const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        appendMessage('system', systemMsg, systemTimestamp);
+                        saveToHistory('system', systemMsg, systemTimestamp, [], {
+                            webhookUrl,
+                            status: response.status,
+                        });
+                        saveDebugTrace('system_notice', {
+                            message: systemMsg,
+                            webhookUrl,
+                            status: response.status,
+                        });
                     }
                 } else {
                     if (response.status === 404) {
-                        appendMessage('system', "Webhook not found. Ensure 'Axiom Master Router' is active in n8n.");
+                        const systemMsg = "Webhook not found. Ensure 'Axiom Master Router' is active in n8n.";
+                        const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        appendMessage('system', systemMsg, systemTimestamp);
+                        saveToHistory('system', systemMsg, systemTimestamp, [], { status: response.status });
+                        saveDebugTrace('webhook_error', { message: systemMsg, status: response.status });
                     } else {
-                        appendMessage('system', `Communication Error: n8n returned ${response.status}.`);
+                        const systemMsg = `Communication Error: n8n returned ${response.status}.`;
+                        const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                        appendMessage('system', systemMsg, systemTimestamp);
+                        saveToHistory('system', systemMsg, systemTimestamp, [], { status: response.status });
+                        saveDebugTrace('webhook_error', { message: systemMsg, status: response.status });
                     }
                 }
             } catch (error) {
                 clearInterval(stepInterval);
                 if (error && error.name === 'AbortError') {
-                    appendMessage('system', "Connection timeout: Axiom Engine did not answer in time.");
+                    const systemMsg = "Connection timeout: Axiom Engine did not answer in time.";
+                    const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    appendMessage('system', systemMsg, systemTimestamp);
+                    saveToHistory('system', systemMsg, systemTimestamp);
+                    saveDebugTrace('request_error', {
+                        kind: 'timeout',
+                        name: error.name,
+                        message: error.message || systemMsg,
+                    });
                 } else {
-                    appendMessage('system', `Connection failure: Could not reach Axiom Engine.`);
+                    const systemMsg = "Connection failure: Could not reach Axiom Engine.";
+                    const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    appendMessage('system', systemMsg, systemTimestamp);
+                    saveToHistory('system', systemMsg, systemTimestamp);
+                    saveDebugTrace('request_error', {
+                        kind: 'connection',
+                        name: error && error.name ? error.name : 'Error',
+                        message: error && error.message ? error.message : systemMsg,
+                    });
                 }
             } finally {
                 sendBtn.disabled = false;
@@ -776,6 +925,8 @@
         });
 
         sendBtn.addEventListener('click', () => sendPayload(userInput.value, currentMode));
+        clearHistoryBtn.addEventListener('click', clearHistory);
+        exportDebugBtn.addEventListener('click', exportDebugSnapshot);
 
         // Initial Load
         window.addEventListener('load', () => {

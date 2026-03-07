@@ -1,37 +1,16 @@
 ﻿Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.Application]::EnableVisualStyles()
 Add-Type -AssemblyName System.Drawing
 
 # $global:logFile will be initialized in the click handler to ensure a fresh session.
 
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-
+# --- SHARED-STREAM LOGGING HELPER ---
 function Write-Log {
     param([string]$Message)
     try {
         $msg = "[$(Get-Date -Format 'HH:mm:ss')] $Message`r`n"
-        [System.IO.File]::AppendAllText($global:logFile, $msg, [System.Text.Encoding]::UTF8)
+        [System.IO.File]::AppendAllText($global:logFile, $msg)
     }
     catch { }
-}
-
-function Invoke-WorkerScript {
-    param([string]$ScriptContent, [string]$StepName, [bool]$DirectLog = $false)
-    $tempPath = Join-Path $env:TEMP "axiom_worker_$StepName.ps1"
-    [System.IO.File]::WriteAllText($tempPath, $ScriptContent, [System.Text.Encoding]::UTF8)
-    
-    $cmdRunner = Join-Path $env:TEMP "axiom_cli_$StepName.cmd"
-    if ($DirectLog) {
-        $logTarget = "`"$env:USERPROFILE\Desktop\Axiom-Ollama-Install.log`""
-    }
-    else {
-        $logTarget = "`"$global:logFile`""
-    }
-
-    $cmdContent = "@echo off`r`nchcp 65001 > NUL`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$tempPath`" >> $logTarget 2>&1"
-    [System.IO.File]::WriteAllText($cmdRunner, $cmdContent, [System.Text.Encoding]::UTF8)
-
-    return Start-Process "cmd.exe" -ArgumentList "/c `"$cmdRunner`"" -WindowStyle Hidden -PassThru
 }
 
 
@@ -39,7 +18,7 @@ function Invoke-WorkerScript {
 $code = '[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);'
 Add-Type -MemberDefinition $code -Name "Win32ShowWindow" -Namespace "Win32" -ErrorAction SilentlyContinue
 $hwnd = (Get-Process -Id $PID).MainWindowHandle
-if ($hwnd -ne [IntPtr]::Zero) { [Win32.Win32ShowWindow]::ShowWindow($hwnd, 0) } # 0= SW_HIDE
+if ($hwnd -ne [IntPtr]::Zero) { [Win32.Win32ShowWindow]::ShowWindow($hwnd, 0) } # 0 = SW_HIDE
 
 
 # Create main form
@@ -143,53 +122,67 @@ function Start-NextStep {
             }
             
             Write-Log "--- Installing Node.js v22 (LTS) ---"
-            $script = "winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity"
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "Node"
+            $cmdArgs = "/c winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 2) {
             $statusLabel.Text = "Step 2/7: Installing Ollama..."
             $progressBar.Value = 25
             Write-Log "--- Installing Ollama (Winget) ---"
-            $script = "winget install --id Ollama.Ollama -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity"
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "Ollama" -DirectLog $true
+            $cmdArgs = "/c winget install --id Ollama.Ollama -e --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 3) {
             $statusLabel.Text = "Step 3/7: Closing conflicting apps..."
             $progressBar.Value = 35
             Write-Log "--- Clearing Lingering AI Processes ---"
             
-            # Professional silent cleanup
-            $script = @'
-$procs = @("ollama", "ollama app", "node", "n8n")
-foreach ($p in $procs) {
-    if (Get-Process -Name $p -ErrorAction SilentlyContinue) {
-        Write-Host "Closing lingering $p process..."
-        taskkill /F /IM "$p.exe" /T 2>$null | Out-Null
-    } else {
-        Write-Host "$p process not running. Skipping."
-    }
-}
-'@
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "TaskKill"
+            # 1. Stop Ollama Service (if exists)
+            $scStop = "/c sc stop ollama >> `"$global:logFile`" 2>&1"
+            Start-Process cmd.exe -ArgumentList $scStop -WindowStyle Hidden -Wait
+
+            # 2. Kill all potential CLI/Node locks
+            $scavengeCmd = "/c taskkill /F /IM `"ollama.exe`" /IM `"ollama app.exe`" /IM `"node.exe`" /IM `"n8n.exe`" /T >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $scavengeCmd -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 4) {
             $statusLabel.Text = "Step 4/7: Deploying n8n Engine (Pinned v2.10.1)..."
             $progressBar.Value = 45
             Write-Log "--- Verifying n8n Engine Integrity ---"
             
-            $global:n8nAssetPath = "$env:APPDATA\npm\node_modules\n8n\dist\public\index.html"
+            # Refresh path to catch previous installs
+            $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+            $env:Path = "$machinePath;$userPath"
+
+            # Get the effective npm root
+            $npmRoot = try { Invoke-Expression "npm root -g" | Out-String } catch { $null }
+            $n8nPath = if ($npmRoot) { Join-Path $npmRoot.Trim() "n8n" } else { "$env:APPDATA\npm\node_modules\n8n" }
+            $uiAsset = Join-Path $n8nPath "dist\public\index.html"
             
-            $script = @"
-if (Test-Path `"$global:n8nAssetPath`") {
-    Write-Host `"n8n physical modules found. Verifying and Re-initializing cleanly...`"
-} else {
-    Write-Host `"Deploying n8n engine from scratch...`"
-}
-Write-Host `"Installing n8n@2.10.1 (This normally takes 2-5 minutes)...`"
-npm cache clean --force
-npm install -g n8n@2.10.1 --force --legacy-peer-deps --no-progress --loglevel=error
-"@
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "N8N"
+            # Check version AND physical presence of frontend assets
+            $checkCmd = "n8n --version"
+            $currentVer = try { Invoke-Expression $checkCmd 2>$null } catch { $null }
+            
+            if ($currentVer -eq "2.10.1" -and (Test-Path $uiAsset)) {
+                Write-Log "n8n v2.10.1 integrity verified. Skipping deployment."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            if (-not (Test-Path $uiAsset)) {
+                Write-Log "CRITICAL CORRUPTION: Frontend assets missing. Performing Deep Wipe..."
+                # Manual Wipe of the n8n directory to ensure npm install --force is clean
+                if (Test-Path $n8nPath) { 
+                    try { Remove-Item $n8nPath -Recurse -Force -ErrorAction SilentlyContinue } catch { }
+                    if (Test-Path $n8nPath) { Rename-Item $n8nPath -NewName "n8n_corrupted_$(Get-Date -Format 'HHmm')" -ErrorAction SilentlyContinue }
+                }
+            }
+
+            Write-Log "--- Installing n8n@2.10.1 (Absolute Reconstruction) ---"
+            $cmdArgs = "/c npm cache clean --force && npm install -g n8n@2.10.1 --force --legacy-peer-deps --no-progress --loglevel=error >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 5) {
             $statusLabel.Text = "Step 5/7: Integrating OpenClaw & Local AI Node..."
@@ -201,23 +194,23 @@ npm install -g n8n@2.10.1 --force --legacy-peer-deps --no-progress --loglevel=er
             $CUSTOM_NODES_DIR = "$env:USERPROFILE\.n8n\custom"
             if (-not (Test-Path $CUSTOM_NODES_DIR)) { New-Item -ItemType Directory -Force -Path $CUSTOM_NODES_DIR | Out-Null }
             
-            $NODE_TGZ = "$PROJECT_ROOT\n8n-nodes-local-ai-manager-0.1.1.tgz"
+            # Pre-check: OpenClaw CLI
+            $ocCheck = try { Invoke-Expression "openclaw --version" 2>$null } catch { $null }
+            # Pre-check: Custom Node (check for dir existence)
+            $nodeCheck = Test-Path "$CUSTOM_NODES_DIR\node_modules\n8n-nodes-local-ai-manager"
             
-            $script = @"
-`$ocPath = `"`$env:APPDATA\npm\node_modules\openclaw`"
-`$nPath = `"$CUSTOM_NODES_DIR\node_modules\n8n-nodes-local-ai-manager`"
-if ((Test-Path `$ocPath) -and (Test-Path `$nPath)) {
-    Write-Host `"OpenClaw and Custom Node modules detected. Applying fresh linking...`"
-} else {
-    Write-Host `"Deploying OpenClaw Core...`"
-}
-npm install -g openclaw --loglevel=error --no-progress
-Write-Host `"Deploying Custom n8n Skill Node...`"
-Set-Location `"$CUSTOM_NODES_DIR`"
-if (-not (Test-Path package.json)) { npm init -y | Out-Null }
-npm install `"$NODE_TGZ`" --save-exact --loglevel=error --no-progress
-"@
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "OpenClaw"
+            if ($ocCheck -and $nodeCheck) {
+                Write-Log "OpenClaw and Custom Node already integrated. Skipping."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            Write-Log "--- Installing OpenClaw Core & Custom Plugin ---"
+            $NODE_TGZ = "$PROJECT_ROOT\n8n-nodes-local-ai-manager-0.1.1.tgz"
+            # Consolidated install command
+            $cmdArgs = "/c npm install -g openclaw --loglevel=error --no-progress && cd /d `"$CUSTOM_NODES_DIR`" && if not exist package.json npm init -y && npm install `"$NODE_TGZ`" --save-exact --loglevel=error --no-progress >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 6) {
             $statusLabel.Text = "Step 6/7: Deploying Secure Bridge & Skills..."
@@ -234,16 +227,26 @@ npm install `"$NODE_TGZ`" --save-exact --loglevel=error --no-progress
             Write-Log "Skill deployed to $SKILL_DIR"
  
             # 2. Workflow Import (via n8n CLI)
-            $script = "n8n import:workflow --input=`"$PROJECT_ROOT\Secure-Agent-Bridge.json`""
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "N8NImport"
+            $cmdArgs = "/c n8n import:workflow --input=`"$PROJECT_ROOT\Secure-Agent-Bridge.json`" >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 7) {
             $statusLabel.Text = "Step 7/7: Downloading AI Brain (Expect 5GB+ Download)"
             $progressBar.Value = 90
             Write-Log "--- Checking AI Model Status ---"
 
-            $script = "Write-Host `"Waking local AI model service...`"; ollama pull llama3.2"
-            $global:installProcess = Invoke-WorkerScript -ScriptContent $script -StepName "OllamaPull"
+            # Pre-check: Does model already exist?
+            $modelCheck = try { Invoke-Expression "ollama list" 2>$null | Select-String "llama3.2" } catch { $null }
+            if ($modelCheck) {
+                Write-Log "AI Brain (llama3.2) detected. Skipping download."
+                $global:installStep++
+                Start-NextStep
+                return
+            }
+
+            Write-Log "--- Pulling Model llama3.2 (This will take a while) ---"
+            $cmdArgs = "/c ollama pull llama3.2 >> `"$global:logFile`" 2>&1"
+            $global:installProcess = Start-Process cmd.exe -ArgumentList $cmdArgs -WindowStyle Hidden -PassThru
         }
         elseif ($global:installStep -eq 8) {
             # Step 8 Consolidated into Step 5 & 7
@@ -283,20 +286,13 @@ function Update-TextBox {
             if ($info.Length -gt $global:lastFileSize) {
                 $fs = New-Object System.IO.FileStream($global:logFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
                 $fs.Seek($global:lastFileSize, [System.IO.SeekOrigin]::Begin) | Out-Null
-                $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                $sr = New-Object System.IO.StreamReader($fs)
                 $newData = $sr.ReadToEnd()
                 $sr.Close()
                 $fs.Close()
                 $global:lastFileSize = $info.Length
                 if ($newData) {
-                    if ($newData.Length -gt 15000) { $newData = $newData.Substring($newData.Length - 15000) }
-                    $incomingLines = $newData -split "[\r\n]+"
-                    
-                    # Prevent catastrophic regex freeze from massive '\r' progress chunks during 'ollama pull'
-                    if ($incomingLines.Count -gt 50) {
-                        $incomingLines = $incomingLines[-50..-1]
-                    }
-
+                    $incomingLines = $newData -split "`n"
                     $cleanData = ""
                     # Robust ANSI escape sequence filter
                     $ansiRegex = "\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])"
@@ -322,7 +318,6 @@ function Update-TextBox {
 }
 
 $timer.Add_Tick({
-        # DO NOT call DoEvents() here! It causes recursive stack overflows during heavy disk IO!
         if ($global:installStep -eq 999) { return }
         if ($global:installProcess -ne $null) {
             $elapsed = ([datetime]::Now - $global:startTime)
@@ -338,14 +333,11 @@ $timer.Add_Tick({
                 $ollamaPaths = @("$env:LOCALAPPDATA\Programs\Ollama\ollama.exe", "C:\Program Files\Ollama\ollama.exe")
                 $ollamaExists = ($global:installStep -eq 2 -and (($ollamaPaths | Where-Object { Test-Path $_ }) -or (Get-Command ollama -ErrorAction SilentlyContinue)))
                 
-                # N8N Success Check (Step 4): If exit code 1, but assets were successfully laid down or log explicitly says success.
-                $lastLog = if (Test-Path $global:logFile) { Get-Content $global:logFile -Tail 5 | Out-String } else { "" }
-                $n8nExists = ($global:installStep -eq 4 -and (($global:n8nAssetPath -and (Test-Path $global:n8nAssetPath)) -or ($lastLog -like "*success*")))
-                
                 # Model Success Check (Step 7): If log says success or already exists, it is a success even with code 1
+                $lastLog = if (Test-Path $global:logFile) { Get-Content $global:logFile -Tail 5 | Out-String } else { "" }
                 $isModelSuccess = ($global:installStep -eq 7 -and ($lastLog -like "*success*" -or $lastLog -like "*already exists*"))
                 
-                $isPathSuccess = ($nodeExists -or $ollamaExists -or $isModelSuccess -or $n8nExists)
+                $isPathSuccess = ($nodeExists -or $ollamaExists -or $isModelSuccess)
 
                 # Ignore exit codes 1 or 128 for tasks that often return false negatives
                 # Step 3 (Taskkill), Step 5 (NPM Install with skips), Step 6 (N8N Import), Step 7 (Ollama Pull)
@@ -383,8 +375,9 @@ $installButton.Add_Click({
             try {
                 if (Test-Path $global:logFile) { 
                     Remove-Item $global:logFile -Force -ErrorAction SilentlyContinue 
+                    if (Test-Path $global:logFile) { Clear-Content $global:logFile -ErrorAction SilentlyContinue }
                 }
-                " " | Out-File $global:logFile -Encoding utf8 -Force # Ensure file exists for StreamReaders in UTF-8
+                " " | Out-File $global:logFile -Force # Ensure file exists for StreamReaders
             }
             catch { }
 
@@ -408,8 +401,8 @@ $form.ShowDialog() | Out-Null
 # SIG # Begin signature block
 # MIIFdgYJKoZIhvcNAQcCoIIFZzCCBWMCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
 # gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
-# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQURyKwiHiKuOisz6MSyBX6Om5L
-# xiqgggMOMIIDCjCCAfKgAwIBAgIQE0cy1VHaN7tJftbFBRHhijANBgkqhkiG9w0B
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQUoa2b7X8WthAdvW24/LxTn7L0
+# osmgggMOMIIDCjCCAfKgAwIBAgIQE0cy1VHaN7tJftbFBRHhijANBgkqhkiG9w0B
 # AQsFADAdMRswGQYDVQQDDBJBeGlvbS1OZXh1cy1TZWN1cmUwHhcNMjYwMzA1MjEy
 # MDUyWhcNMjcwMzA1MjE0MDUyWjAdMRswGQYDVQQDDBJBeGlvbS1OZXh1cy1TZWN1
 # cmUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDqthNyYGdxkdmOfloS
@@ -429,11 +422,11 @@ $form.ShowDialog() | Out-Null
 # aW9tLU5leHVzLVNlY3VyZQIQE0cy1VHaN7tJftbFBRHhijAJBgUrDgMCGgUAoHgw
 # GAYKKwYBBAGCNwIBDDEKMAigAoAAoQKAADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGC
 # NwIBBDAcBgorBgEEAYI3AgELMQ4wDAYKKwYBBAGCNwIBFTAjBgkqhkiG9w0BCQQx
-# FgQURsBIYvA1BLHzZiObggBAzKmUeBQwDQYJKoZIhvcNAQEBBQAEggEAZ3LAVd9U
-# KYx3U+0iT9KWvjvwDoMKKKDvnYI1mJWgFFkm5F4zgKgxYEwQAZlbpBOlLokLpyIA
-# 2cnckKlf3bi++uBH+uFZOydPoQKeinNPfaSz0I0caPhXuyG22FPCu4azARc4bnht
-# lYmP8hxy/PbOUdoB1BZjIAvHGGNzA9KmMWrRyQre+TrR/2PPhb/oLKC01WH9FpvV
-# vkucg9qg6RaAVUZPVAsNaBjdkdIhzJ+xPEeCoRqA+1Cy/LdlH1uLBvEgJzgicM5B
-# KQJJa/K2FmCFJDhFCMMfe0upuFBuFv0g/jOS2aAU9sc9Kwa2UVmJqjIy7vZJmaEG
-# pAcW6bKC8Aq+uA==
+# FgQUdbjez2tW/PuWrr/Hh/fqlvppMpAwDQYJKoZIhvcNAQEBBQAEggEAasZSfAHz
+# Upcl69I5FihgjgHtKE0a5DmkOtNiu8Y5St7E7/AZguzoDAm2sXzO/Qb2R/wmtvt2
+# e22+iyLIbZ5iHlB4UrXP/s9fLLC3SIEcg9zF4rhzH6QGQERz/g+I4Z3cWLx6N43G
+# t5oThIxg/Pf4Fzu3lZ5WKFsy8Or73KnHQDz+wtgG22BImzutSY4g91zLL7x2ibgJ
+# 4c+GzAX4oYuDohYwHNpTBOZk2GDSXvF/3ZZ2tF2L9cFiiseUnYUty1v0DgadifWE
+# WEjTe4Vno95f65peOWPLDPoVJKGOC0CnaqRdprd5TEcwsAvCJmKdc8Tb9pFUMz6j
+# xa5p3+NBEQbQ5w==
 # SIG # End signature block

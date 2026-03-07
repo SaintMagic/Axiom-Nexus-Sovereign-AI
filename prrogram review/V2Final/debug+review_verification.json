@@ -1,0 +1,116 @@
+﻿{
+  "generated_by": "manual+scripted review",
+  "generated_at_local": "2026-03-07T21:05:00+01:00",
+  "verification_mode": "fact_confirmation_with_health_checks",
+  "release_assessment": {
+    "windows_local_preview": "go_after_AXN-001_fix",
+    "portable_release": "blocked",
+    "primary_blockers": [
+      "AXN-001",
+      "AXN-003"
+    ]
+  },
+  "summary": {
+    "total_checks": 9,
+    "passed": 8,
+    "failed": 1
+  },
+  "results": [
+    {
+      "id": "AXN-001",
+      "severity": "critical",
+      "assertion": "Launcher references INSTALL-NEXUS.ps1 while target file is missing",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "launcher_file": "Managed_Stack_Data/Axiom-Launcher.ps1",
+        "missing_path": "Managed_Stack_Data/INSTALL-NEXUS.ps1",
+        "target_exists": false
+      }
+    },
+    {
+      "id": "AXN-002",
+      "severity": "medium",
+      "assertion": "Installer flow depends on a local .tgz package name/path",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "references_present": true,
+        "artifact_path": "Managed_Stack_Data/n8n-nodes-local-ai-manager-0.1.0.tgz",
+        "artifact_exists_now": true
+      }
+    },
+    {
+      "id": "AXN-003",
+      "severity": "high",
+      "assertion": "Custom node build script is PowerShell-specific (portability risk)",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "package_file": "n8n-nodes-local-ai-manager/package.json",
+        "build_script_contains_powershell": true,
+        "windows_build_exit": 0
+      }
+    },
+    {
+      "id": "AXN-004",
+      "severity": "medium",
+      "assertion": "Remote baseUrl default is 'http://' placeholder",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "node_file": "n8n-nodes-local-ai-manager/src/nodes/LocalAiManager/LocalAiManager.node.ts"
+      }
+    },
+    {
+      "id": "AXN-005",
+      "severity": "medium",
+      "assertion": "N8N settings permission enforcement disabled at startup",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "startup_file": "Managed_Stack_Data/Nexus-Start.ps1"
+      }
+    },
+    {
+      "id": "AXN-006",
+      "severity": "low",
+      "assertion": "Axiom Hub UI still scaffold/default",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "ui_file": "Managed_Stack_Data/Axiom-Hub/src/App.jsx"
+      }
+    },
+    {
+      "id": "HEALTH-AXH-LINT",
+      "severity": "info",
+      "assertion": "Axiom-Hub lint passes",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "exit_code": 0
+      }
+    },
+    {
+      "id": "HEALTH-AXH-BUILD",
+      "severity": "info",
+      "assertion": "Axiom-Hub build passes",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "exit_code": 0
+      }
+    },
+    {
+      "id": "HEALTH-NODE-BUILD-WIN",
+      "severity": "info",
+      "assertion": "Custom node build passes on current Windows host",
+      "status": "pass",
+      "confirmed": true,
+      "evidence": {
+        "exit_code": 0
+      }
+    }
+  ]
+}

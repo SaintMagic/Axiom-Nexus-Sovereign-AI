@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-local-ai-manager",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Custom n8n node to interact with local Ollama instance",
     "keywords": [
         "n8n-community-node-package"
@@ -17,7 +17,7 @@
     },
     "main": "dist/nodes/LocalAiManager/LocalAiManager.node.js",
     "scripts": {
-        "build": "tsc && powershell -Command \"if (!(Test-Path 'dist/nodes/LocalAiManager')) { New-Item -ItemType Directory -Path 'dist/nodes/LocalAiManager' -Force }; Copy-Item -Path 'src/nodes/LocalAiManager/robot.svg' -Destination 'dist/nodes/LocalAiManager/' -Force\""
+        "build": "tsc && powershell -Command \"$destinations = @('dist/nodes/LocalAiManager','dist/nodes/AxiomParser','dist/nodes/AxiomTransform'); foreach ($d in $destinations) { if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; Copy-Item -Path 'src/nodes/LocalAiManager/robot.svg' -Destination (Join-Path $d 'robot.svg') -Force }\""
     },
     "files": [
         "dist"
@@ -25,7 +25,9 @@
     "n8n": {
         "n8nNodesApiVersion": 1,
         "nodes": [
-            "dist/nodes/LocalAiManager/LocalAiManager.node.js"
+            "dist/nodes/LocalAiManager/LocalAiManager.node.js",
+            "dist/nodes/AxiomParser/AxiomParser.node.js",
+            "dist/nodes/AxiomTransform/AxiomTransform.node.js"
         ]
     },
     "devDependencies": {
