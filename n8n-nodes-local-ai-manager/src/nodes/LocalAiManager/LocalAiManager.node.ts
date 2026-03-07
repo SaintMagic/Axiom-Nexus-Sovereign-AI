@@ -91,7 +91,18 @@ export class LocalAiManager implements INodeType {
         for (let i = 0; i < items.length; i++) {
             try {
                 const connectionType = this.getNodeParameter('connectionType', i) as string;
-                let baseUrl = 'http://localhost:11434';
+                let baseUrl = 'http://127.0.0.1:11434';
+                const requestFn =
+                    (this.helpers as any).httpRequest?.bind(this.helpers) ??
+                    (this.helpers as any).request?.bind(this.helpers);
+
+                if (!requestFn) {
+                    throw new NodeOperationError(
+                        this.getNode(),
+                        new Error('No HTTP helper available (expected this.helpers.httpRequest or this.helpers.request).'),
+                        { itemIndex: i },
+                    );
+                }
 
                 if (connectionType === 'remote') {
                     baseUrl = this.getNodeParameter('baseUrl', i) as string;
@@ -105,19 +116,42 @@ export class LocalAiManager implements INodeType {
                 const modelName = this.getNodeParameter('modelName', i) as string;
                 const systemDirective = this.getNodeParameter('systemDirective', i) as string;
                 const userInput = this.getNodeParameter('userInput', i) as string;
+                const pingTimeoutMs = 5000;
+                const generateTimeoutMs = 120000;
 
                 // 1. Connection Test: Ping /api/tags
                 try {
                     const pingOptions = {
                         method: 'GET' as any,
+                        url: `${baseUrl}/api/tags`,
                         uri: `${baseUrl}/api/tags`,
+                        timeout: pingTimeoutMs,
                         json: true,
                     };
-                    await this.helpers.request(pingOptions);
+
+                    try {
+                        await requestFn(pingOptions);
+                    } catch (primaryPingError) {
+                        // Some Windows/network stacks resolve localhost differently; retry with 127.0.0.1
+                        if (baseUrl.includes('localhost')) {
+                            const fallbackBaseUrl = baseUrl.replace('localhost', '127.0.0.1');
+                            await requestFn({
+                                method: 'GET' as any,
+                                url: `${fallbackBaseUrl}/api/tags`,
+                                uri: `${fallbackBaseUrl}/api/tags`,
+                                timeout: pingTimeoutMs,
+                                json: true,
+                            });
+                            baseUrl = fallbackBaseUrl;
+                        } else {
+                            throw primaryPingError;
+                        }
+                    }
                 } catch (pingError) {
+                    const detail = (pingError as any)?.message ? ` Details: ${(pingError as any).message}` : '';
                     throw new NodeOperationError(
                         this.getNode(),
-                        new Error(`Ollama not found at ${baseUrl}. Connection test failed.`),
+                        new Error(`Ollama not found at ${baseUrl}. Connection test failed.${detail}`),
                         { itemIndex: i }
                     );
                 }
@@ -125,6 +159,7 @@ export class LocalAiManager implements INodeType {
                 // 2. Perform execution
                 const generateOptions = {
                     method: 'POST' as any,
+                    url: `${baseUrl}/api/generate`,
                     uri: `${baseUrl}/api/generate`,
                     body: {
                         model: modelName,
@@ -132,10 +167,11 @@ export class LocalAiManager implements INodeType {
                         system: systemDirective,
                         stream: false,
                     },
+                    timeout: generateTimeoutMs,
                     json: true,
                 };
 
-                const responseData = await this.helpers.request(generateOptions);
+                const responseData = await requestFn(generateOptions);
 
                 returnData.push({
                     json: responseData,

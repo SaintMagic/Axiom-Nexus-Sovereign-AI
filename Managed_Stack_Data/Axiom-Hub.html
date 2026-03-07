@@ -522,9 +522,11 @@
 
         // State
         let currentMode = 'chat';
-        // Fast-path local prototyping: Route directly to the Test Webhook
-        // This bypasses n8n 2.x strict production-activation requirements.
-        const webhookUrl = "http://localhost:5678/webhook-test/openclaw-exec";
+        // Use the dedicated production webhook path for autonomous operation.
+        const webhookUrls = [
+            "http://127.0.0.1:5678/webhook/axiom-router-exec",
+            "http://127.0.0.1:5678/webhook-test/axiom-router-exec"
+        ];
         let history = JSON.parse(localStorage.getItem('axiomChatHistory')) || [];
 
         // Auto-resize textarea
@@ -625,6 +627,45 @@
             chatWindow.innerHTML = '<div class="message system">History Cleared.</div>';
         }
 
+        async function postToWebhook(payload) {
+            let lastResponse = null;
+            let lastError = null;
+
+            for (const webhookUrl of webhookUrls) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 240000);
+
+                try {
+                    const response = await fetch(webhookUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Axiom-Auth': 'axiom-secure-local'
+                        },
+                        body: JSON.stringify(payload),
+                        signal: controller.signal
+                    });
+
+                    lastResponse = response;
+
+                    // If production webhook is not active, try test webhook automatically.
+                    if (response.status === 404) {
+                        continue;
+                    }
+
+                    return response;
+                } catch (error) {
+                    lastError = error;
+                } finally {
+                    clearTimeout(timer);
+                }
+            }
+
+            if (lastResponse) return lastResponse;
+            if (lastError) throw lastError;
+            throw new Error("No webhook endpoint available.");
+        }
+
         // Send payload to n8n
         async function sendPayload(text, mode) {
             if (!text.trim()) return;
@@ -656,29 +697,69 @@
             }, 800);
 
             try {
-                const response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Axiom-Auth': 'axiom-secure-local'
-                    },
-                    body: JSON.stringify({ mode, content: text, timestamp: new Date().toISOString() })
+                const response = await postToWebhook({
+                    mode,
+                    content: text,
+                    timestamp: new Date().toISOString(),
+                    history: history.slice(-20).map((m) => ({
+                        sender: m.sender,
+                        text: m.text,
+                        timestamp: m.timestamp,
+                    })),
                 });
 
                 clearInterval(stepInterval);
                 loadingText.textContent = "Finalizing response...";
 
                 if (response.ok) {
-                    const data = await response.json();
-                    const reply = data.response || "Task executed successfully via n8n bridge.";
-                    appendMessage('agent', reply, null, ["Workflow verification passed", "Data encrypted for local storage"]);
-                    saveToHistory('agent', reply, timestamp);
+                    const rawText = await response.text();
+                    let data = null;
+
+                    if (rawText && rawText.trim() !== "") {
+                        try {
+                            data = JSON.parse(rawText);
+                        } catch {
+                            data = rawText;
+                        }
+                    }
+
+                    let reply = "";
+                    if (Array.isArray(data)) {
+                        const first = data[0];
+                        if (first && typeof first === "object") {
+                            reply =
+                                first.response ||
+                                first.output ||
+                                first.message ||
+                                (first.json && (first.json.response || first.json.output || first.json.message)) ||
+                                "";
+                        }
+                    } else if (data && typeof data === "object") {
+                        reply = data.response || data.output || data.message || "";
+                    } else if (typeof data === "string") {
+                        reply = data;
+                    }
+
+                    if (reply) {
+                        appendMessage('agent', reply, null, ["Workflow verification passed", "Data encrypted for local storage"]);
+                        saveToHistory('agent', reply, timestamp);
+                    } else {
+                        appendMessage('system', "Workflow accepted the request, but no response payload was returned yet.");
+                    }
                 } else {
-                    appendMessage('system', `Communication Error: n8n returned ${response.status}.`);
+                    if (response.status === 404) {
+                        appendMessage('system', "Webhook not found. Ensure 'Axiom Master Router' is active in n8n.");
+                    } else {
+                        appendMessage('system', `Communication Error: n8n returned ${response.status}.`);
+                    }
                 }
             } catch (error) {
                 clearInterval(stepInterval);
-                appendMessage('system', `Connection failure: Could not reach Axiom Engine.`);
+                if (error && error.name === 'AbortError') {
+                    appendMessage('system', "Connection timeout: Axiom Engine did not answer in time.");
+                } else {
+                    appendMessage('system', `Connection failure: Could not reach Axiom Engine.`);
+                }
             } finally {
                 sendBtn.disabled = false;
                 loadingIndicator.classList.remove('active');
