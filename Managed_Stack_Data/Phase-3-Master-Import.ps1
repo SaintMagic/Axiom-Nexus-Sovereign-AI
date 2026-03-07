@@ -4,6 +4,33 @@
 $PROJECT_ROOT = $PSScriptRoot
 if (-not $PROJECT_ROOT) { $PROJECT_ROOT = (Get-Location).Path }
 
+Write-Host "[4/4] Installing Axiom Custom Nodes (Sovereign Node Protocol V7)..." -ForegroundColor Cyan
+$customNodeSource = Join-Path $PSScriptRoot "n8n-nodes-local-ai-manager"
+$n8nNodesDir = Join-Path $env:USERPROFILE ".n8n\nodes"
+
+# Ensure root nodes directory exists
+if (-not (Test-Path $n8nNodesDir)) {
+    New-Item -ItemType Directory -Path $n8nNodesDir -Force | Out-Null
+}
+
+try {
+    # The V7 "True Root Cause" Fix: Don't just copy files, actually install them via npm
+    # so n8n's backend registry detects the dependency in package.json
+    Write-Host "      Compiling local node..." -ForegroundColor Gray
+    Push-Location $customNodeSource
+    npm run build | Out-Null
+    Pop-Location
+
+    Write-Host "      Executing native npm installation into n8n registry..." -ForegroundColor Gray
+    Push-Location $n8nNodesDir
+    npm install "$customNodeSource" --no-fund --no-audit | Out-Null
+    Pop-Location
+
+    Write-Host "      Custom nodes installed and registered successfully." -ForegroundColor Green
+}
+catch {
+    Write-Host "      [WARNING] Custom node installation failed: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 Write-Host "--- Axiom Nexus: Phase 3 Activation ---" -ForegroundColor Cyan
 
 $workflows = @(
