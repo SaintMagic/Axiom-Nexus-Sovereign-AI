@@ -148,7 +148,7 @@
                     200
                 ],
                 "parameters": {
-                    "jsCode": "const response = $input.item.json.response || '';\nlet jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\nlet parsed = { action: 'error', message: 'No valid JSON found' };\n\nif (jsonMatch) {\n  try {\n    parsed = JSON.parse(jsonMatch[0]);\n    if (parsed.path) {\n      let cleanPath = parsed.path.replace(/^[a-zA-Z]:/, '').replace(/^[\\/\\\\]+/, '').replace(/\\.\\.\\//g, '').replace(/\\.\\.\\\\/g, '');\n      parsed.fullPath = `C:/Axiom_Files/${cleanPath}`;\n    }\n  } catch(e) {\n    parsed = { action: 'error', message: 'Malformed JSON response: ' + e.message };\n  }\n}\nreturn { json: parsed };"
+                    "jsCode": "const response = $input.item.json.response || '';\nlet jsonMatch = response.match(/\\{[\\s\\S]*\\}/);\nlet parsed = { action: 'error', message: 'No valid JSON found', content: '' };\n\nif (jsonMatch) {\n  try {\n    parsed = JSON.parse(jsonMatch[0]);\n    if (parsed.content === undefined) parsed.content = '';\n    if (parsed.path) {\n      // Normalize path\n      let normalizedPath = parsed.path.replace(/\\\\/g, '/');\n      if (normalizedPath.toLowerCase().startsWith('c:/axiom_files')) {\n          parsed.isExternal = false;\n          parsed.fullPath = normalizedPath;\n      } else {\n          parsed.isExternal = true;\n          parsed.fullPath = normalizedPath;\n      }\n    }\n  } catch(e) {\n    parsed = { action: 'error', message: 'Malformed JSON response: ' + e.message, content: '' };\n  }\n}\nreturn { json: parsed };"
                 }
             },
             {
@@ -157,7 +157,7 @@
                 "type": "n8n-nodes-base.switch",
                 "typeVersion": 3.4,
                 "position": [
-                    1000,
+                    1400,
                     200
                 ],
                 "parameters": {
@@ -249,7 +249,7 @@
                 "type": "n8n-nodes-base.readWriteFile",
                 "typeVersion": 1,
                 "position": [
-                    1200,
+                    1600,
                     100
                 ],
                 "parameters": {
@@ -264,7 +264,7 @@
                 "type": "n8n-nodes-base.readWriteFile",
                 "typeVersion": 1,
                 "position": [
-                    1200,
+                    1600,
                     200
                 ],
                 "parameters": {
@@ -278,7 +278,7 @@
                 "type": "n8n-nodes-base.readWriteFile",
                 "typeVersion": 1,
                 "position": [
-                    1200,
+                    1600,
                     300
                 ],
                 "parameters": {
@@ -292,7 +292,7 @@
                 "type": "n8n-nodes-base.set",
                 "typeVersion": 1,
                 "position": [
-                    1200,
+                    1600,
                     400
                 ],
                 "parameters": {
@@ -313,7 +313,7 @@
                 "type": "n8n-nodes-base.set",
                 "typeVersion": 1,
                 "position": [
-                    1400,
+                    1800,
                     100
                 ],
                 "parameters": {
@@ -334,7 +334,7 @@
                 "type": "n8n-nodes-base.set",
                 "typeVersion": 1,
                 "position": [
-                    1400,
+                    1800,
                     200
                 ],
                 "parameters": {
@@ -355,7 +355,7 @@
                 "type": "n8n-nodes-base.set",
                 "typeVersion": 1,
                 "position": [
-                    1400,
+                    1800,
                     300
                 ],
                 "parameters": {
@@ -450,7 +450,7 @@
                 "type": "n8n-nodes-base.respondToWebhook",
                 "typeVersion": 1,
                 "position": [
-                    1800,
+                    2200,
                     200
                 ],
                 "parameters": {
@@ -463,7 +463,7 @@
                 "type": "n8n-nodes-base.set",
                 "typeVersion": 1,
                 "position": [
-                    1600,
+                    2000,
                     200
                 ],
                 "parameters": {
@@ -484,13 +484,108 @@
                 "type": "n8n-nodes-base.sqlite",
                 "typeVersion": 1,
                 "position": [
-                    1700,
+                    2100,
                     200
                 ],
                 "parameters": {
                     "operation": "executeQuery",
                     "query": "=INSERT INTO short_term_memory (sender, content) VALUES ('user', '{{$node[\"Extract Input\"].json.content}}'); INSERT INTO short_term_memory (sender, content) VALUES ('agent', '{{$json.response}}');",
                     "databaseFile": "C:/Fiverr gigs/N8N promo project/Managed_Stack_Data/axiom_memory.db"
+                }
+            },
+            {
+                "id": "node-sandbox-check",
+                "name": "Sandbox Check",
+                "type": "n8n-nodes-base.if",
+                "typeVersion": 1,
+                "position": [
+                    900,
+                    200
+                ],
+                "parameters": {
+                    "conditions": {
+                        "boolean": [
+                            {
+                                "value1": "={{$json.isExternal}}",
+                                "value2": true
+                            }
+                        ]
+                    }
+                }
+            },
+            {
+                "id": "node-ask-permission",
+                "name": "Ask Hub Permission",
+                "type": "n8n-nodes-base.httpRequest",
+                "typeVersion": 4.1,
+                "position": [
+                    900,
+                    400
+                ],
+                "parameters": {
+                    "method": "POST",
+                    "url": "http://localhost:4000/api/notify",
+                    "sendBody": true,
+                    "bodyParameters": {
+                        "parameters": [
+                            {
+                                "name": "type",
+                                "value": "permission_request"
+                            },
+                            {
+                                "name": "message",
+                                "value": "Axiom Nexus is requesting {{$json.action}} access to external file: {{$json.fullPath}}. Allow?"
+                            },
+                            {
+                                "name": "resumeUrl",
+                                "value": "http://localhost:5678/webhook-waiting/{{$execution.id}}/approve"
+                            }
+                        ]
+                    },
+                    "options": {}
+                }
+            },
+            {
+                "id": "node-wait-permission",
+                "name": "Wait For Approval",
+                "type": "n8n-nodes-base.wait",
+                "typeVersion": 1,
+                "position": [
+                    1050,
+                    400
+                ],
+                "parameters": {
+                    "resume": "webhook",
+                    "webhookPath": "approve"
+                }
+            },
+            {
+                "id": "node-restore-context",
+                "name": "Restore Context",
+                "type": "n8n-nodes-base.set",
+                "typeVersion": 1,
+                "position": [
+                    1200,
+                    400
+                ],
+                "parameters": {
+                    "keepOnlySet": true,
+                    "values": {
+                        "string": [
+                            {
+                                "name": "action",
+                                "value": "={{$node['Parse JSON'].json.action}}"
+                            },
+                            {
+                                "name": "fullPath",
+                                "value": "={{$node['Parse JSON'].json.fullPath}}"
+                            },
+                            {
+                                "name": "content",
+                                "value": "={{$node['Parse JSON'].json.content}}"
+                            }
+                        ]
+                    }
                 }
             }
         ],
@@ -563,17 +658,6 @@
                     [
                         {
                             "node": "Parse JSON",
-                            "type": "main",
-                            "index": 0
-                        }
-                    ]
-                ]
-            },
-            "Parse JSON": {
-                "main": [
-                    [
-                        {
-                            "node": "Tool Hub",
                             "type": "main",
                             "index": 0
                         }
@@ -749,6 +833,68 @@
                     [
                         {
                             "node": "Final Response (Mock)",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Parse JSON": {
+                "main": [
+                    [
+                        {
+                            "node": "Sandbox Check",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Sandbox Check": {
+                "main": [
+                    [
+                        {
+                            "node": "Ask Hub Permission",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ],
+                    [
+                        {
+                            "node": "Tool Hub",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Ask Hub Permission": {
+                "main": [
+                    [
+                        {
+                            "node": "Wait For Approval",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Wait For Approval": {
+                "main": [
+                    [
+                        {
+                            "node": "Restore Context",
+                            "type": "main",
+                            "index": 0
+                        }
+                    ]
+                ]
+            },
+            "Restore Context": {
+                "main": [
+                    [
+                        {
+                            "node": "Tool Hub",
                             "type": "main",
                             "index": 0
                         }
