@@ -157,24 +157,63 @@ export class LocalAiManager implements INodeType {
                 }
 
                 // 2. Perform execution
+                const isCommandMode = systemDirective.toLowerCase().includes('planning brain');
+
                 const generateOptions = {
                     method: 'POST' as any,
-                    url: `${baseUrl}/api/generate`,
-                    uri: `${baseUrl}/api/generate`,
+                    url: `${baseUrl}/api/chat`,
+                    uri: `${baseUrl}/api/chat`,
                     body: {
                         model: modelName,
-                        prompt: userInput,
-                        system: systemDirective,
+                        messages: [
+                            { role: 'system', content: systemDirective },
+                            { role: 'user', content: userInput }
+                        ],
                         stream: false,
-                    },
+                    } as any,
                     timeout: generateTimeoutMs,
                     json: true,
                 };
 
+                if (isCommandMode) {
+                    generateOptions.body.tools = [
+                        {
+                            type: 'function',
+                            function: {
+                                name: 'execute_axiom_action',
+                                description: 'Executes a deterministic filesystem or system action.',
+                                parameters: {
+                                    type: 'object',
+                                    properties: {
+                                        action: { type: 'string', enum: ['write_file', 'read_file', 'list_directory', 'create_empty_file', 'delete_file', 'clarify'] },
+                                        path: { type: 'string', description: 'Absolute file or directory path.' },
+                                        content: { type: 'string', description: 'File content if writing explicit text.' },
+                                        writeMode: { type: 'string', enum: ['overwrite', 'append', 'line_edit'] }
+                                    },
+                                    required: ['action', 'path']
+                                }
+                            }
+                        }
+                    ];
+                    // Mandated strict schema options
+                    generateOptions.body.options = {
+                        parallel_tool_calls: false
+                    };
+                }
+
                 const responseData = await requestFn(generateOptions);
 
+                // Map the /api/chat response back to the legacy { response: "..." } format expected by Axiom Router
+                let normalizedResponse = '';
+                if (responseData.message?.tool_calls && responseData.message.tool_calls.length > 0) {
+                    // Extract the strict JSON arguments from the explicit tool call
+                    normalizedResponse = JSON.stringify(responseData.message.tool_calls[0].function.arguments);
+                } else if (responseData.message?.content) {
+                    normalizedResponse = responseData.message.content;
+                }
+
                 returnData.push({
-                    json: responseData,
+                    json: { ...responseData, response: normalizedResponse },
                 });
 
             } catch (error) {

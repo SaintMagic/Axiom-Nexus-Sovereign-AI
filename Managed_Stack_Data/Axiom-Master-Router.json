@@ -1,1 +1,1628 @@
-{"updatedAt":"2026-03-07T21:35:34.000Z","createdAt":"2026-03-06T20:46:21.912Z","id":"dTzRbVa8bRBZTZ6O","name":"Axiom Master Router","description":null,"active":true,"isArchived":false,"nodes":[{"id":"node-webhook","name":"Webhook Input","type":"n8n-nodes-base.webhook","typeVersion":1,"position":[0,200],"webhookId":"95ddefd0-1bdc-4b1a-a1bc-7c6c963885f0","parameters":{"httpMethod":"POST","path":"axiom-router-exec","responseMode":"responseNode"}},{"id":"node-extract","name":"Extract Input","type":"n8n-nodes-base.code","typeVersion":1,"position":[200,200],"parameters":{"mode":"runOnceForEachItem","jsCode":"const body = $input.item.json.body || {};\nconst text = String(body.content || \u0027\u0027).trim();\nlet mode = String(body.mode || \u0027chat\u0027).toLowerCase();\n\nif (mode === \u0027direct\u0027 || mode === \u0027direct_command\u0027 || mode === \u0027command\u0027) {\n  mode = \u0027tool\u0027;\n}\n\nconst history = Array.isArray(body.history) ? body.history : [];\nconst historyEntries = history\n  .slice(-20)\n  .map((h) =\u003e ({\n    sender: String((h \u0026\u0026 h.sender) || \u0027\u0027),\n    text: String((h \u0026\u0026 h.text) || \u0027\u0027),\n    timestamp: String((h \u0026\u0026 h.timestamp) || \u0027\u0027),\n  }));\n\nconst historyText = historyEntries\n  .map((h) =\u003e `${h.sender || \u0027unknown\u0027}: ${h.text}`)\n  .join(\u0027\\n\u0027);\n\nconst cleanupPath = (raw) =\u003e {\n  let p = String(raw || \u0027\u0027).replace(/\\\\/g, \u0027/\u0027).trim();\n  p = p.replace(/^[\\s\"\u0027\u00060]+|[\\s\"\u0027\u00060]+$/g, \u0027\u0027);\n  p = p.replace(/[\\]\\)\\}]+$/g, \u0027\u0027);\n  p = p.replace(/[.,;:!?]+$/g, \u0027\u0027);\n  return p;\n};\n\nconst pathRegex = /([A-Za-z]:[\\\\/][^\\n\\r]+)/g;\n\nconst extractPathCandidates = (msg) =\u003e {\n  const source = String(msg || \u0027\u0027);\n  const out = [];\n\n  const targetLine = source.match(/Target file path:\\s*([^\\n\\r]+)/i);\n  if (targetLine \u0026\u0026 targetLine[1]) out.push(targetLine[1]);\n\n  const commonInline = [...source.matchAll(/(?:file\\s+to|path\\s*:|at)\\s*([A-Za-z]:[\\\\/][^\\n\\r]+)/gi)];\n  for (const m of commonInline) {\n    if (m \u0026\u0026 m[1]) out.push(m[1]);\n  }\n\n  const generic = [...source.matchAll(pathRegex)];\n  for (const m of generic) {\n    if (m \u0026\u0026 m[1]) out.push(m[1]);\n  }\n\n  return out;\n};\n\nconst extractLastPath = (entries) =\u003e {\n  for (let i = entries.length - 1; i \u003e= 0; i--) {\n    const msg = entries[i].text || \u0027\u0027;\n    const matches = extractPathCandidates(msg);\n    for (let j = matches.length - 1; j \u003e= 0; j--) {\n      const p = cleanupPath(matches[j] || \u0027\u0027);\n      if (p) return p;\n    }\n  }\n  return \u0027\u0027;\n};\n\nconst fileIntentRegex = /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move|read|open|show|list)\\b[\\s\\S]*\\b(file|txt|text|document|note|folder|directory|files?)\\b/i;\n\nconst extractLastUserFileCommand = (entries) =\u003e {\n  for (let i = entries.length - 1; i \u003e= 0; i--) {\n    const e = entries[i];\n    if ((e.sender || \u0027\u0027).toLowerCase() !== \u0027user\u0027) continue;\n    if (fileIntentRegex.test(e.text || \u0027\u0027)) return String(e.text || \u0027\u0027).trim();\n  }\n  return \u0027\u0027;\n};\n\nconst readTextFileSafe = (absolutePath) =\u003e {\n  try {\n    const fs = require(\u0027fs\u0027);\n    const p = cleanupPath(absolutePath);\n    if (!p || !fs.existsSync(p)) return \u0027\u0027;\n    return String(fs.readFileSync(p, \u0027utf8\u0027) || \u0027\u0027).slice(0, 5000);\n  } catch (e) {\n    return \u0027\u0027;\n  }\n};\n\nconst lastFilePath = cleanupPath(extractLastPath(historyEntries));\nconst lastUserFileCommand = extractLastUserFileCommand(historyEntries);\n\nconst shortFollowUp = /^\\s*(do it|you do it|make it|please do it|i need you to make it|i need you top make it|just do it)\\s*[.!?]*\\s*$/i.test(text);\nconst optionSelectionMatch = text.match(/^\\s*(?:option\\s*)?(1|2|3|4)\\s*$/i);\n\nconst lowerText = text.toLowerCase();\nconst hasContextPronoun = /\\b(it|this|that|same)\\b/.test(lowerText);\nconst hasWriteVerb = /\\b(write|put|add|append|update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|create|make|include|insert|format|transform|adjust|rename|renmae|move)\\b/.test(lowerText);\nconst hasLineIntent = /\\b(?:\\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\\s+line\\b/.test(lowerText);\nconst hasLatestFileReference = /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/.test(lowerText);\nconst hasSpacingTransformIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerText) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\bblank\\s+lines?\\b[\\s\\S]*\\bbetween\\s+lines?\\b/.test(lowerText) ||\n  /\\bbetween\\s+words?\\b[\\s\\S]*\\bspace\\b/.test(lowerText);\nconst hasReplaceIntent = /\\breplace\\b[\\s\\S]*\\bwith\\b/.test(lowerText);\nconst hasTransformFollowUp = hasSpacingTransformIntent || hasReplaceIntent;\n\nlet normalizedContent = text;\n\nif (mode === \u0027tool\u0027 \u0026\u0026 shortFollowUp \u0026\u0026 lastUserFileCommand) {\n  normalizedContent = lastUserFileCommand;\n}\n\nif (mode === \u0027tool\u0027 \u0026\u0026 optionSelectionMatch \u0026\u0026 lastUserFileCommand) {\n  normalizedContent = `${lastUserFileCommand}\\n\\nSelection: ${optionSelectionMatch[1]}`;\n}\n\nconst needsContextBinding = !!lastFilePath \u0026\u0026 (\n  /\\b(that|this|same)\\s+file\\b/.test(lowerText) ||\n  /\\b(?:in|into)\\s+it\\b/.test(lowerText) ||\n  hasLatestFileReference ||\n  (hasContextPronoun \u0026\u0026 hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  (!!optionSelectionMatch \u0026\u0026 mode === \u0027tool\u0027)\n);\n\nif (needsContextBinding) {\n  if (!/Target file path:/i.test(normalizedContent)) {\n    normalizedContent += `\\n\\nTarget file path: ${lastFilePath}`;\n  }\n  const currentFileContent = readTextFileSafe(lastFilePath);\n  if (currentFileContent) {\n    normalizedContent += `\\n\\nCurrent file content:\\n${currentFileContent}`;\n  }\n}\n\nconst toolIntent = [\n  /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(read|open|show)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(list|show)\\b.*\\b(directory|folder|files?)\\b/,\n  /\\b(make|create)\\b.*\\b(folder|directory)\\b/,\n  /\\b(that|this|same)\\s+file\\b/,\n  /\\b(?:in|into)\\s+it\\b/,\n  /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/,\n  /\\bmake\\s+me\\b.*\\b(txt|file)\\b/,\n  /\\bhello\\s+world\\b.*\\b(txt|file)\\b/,\n].some((r) =\u003e r.test(normalizedContent.toLowerCase()));\n\nconst explicitSelection = /^\\s*(?:option\\s*)?[1-4]\\s*$/i.test(text);\nconst contextualFileFollowUp = !!lastFilePath \u0026\u0026 (\n  ((/\\b(it|this|that|same)\\b/.test(lowerText) || /\\b(?:in|into)\\s+it\\b/.test(lowerText) || hasLatestFileReference) \u0026\u0026 hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  /^\\s*text\\s+is\\b/.test(lowerText) ||\n  /^\\s*insert\\b/.test(lowerText) ||\n  /^\\s*add\\b/.test(lowerText) ||\n  /^\\s*replace\\b/.test(lowerText)\n);\n\nlet chatExecutionGuard = false;\nlet chatGuardMessage = \u0027\u0027;\nif (mode === \u0027chat\u0027 \u0026\u0026 (toolIntent || shortFollowUp || contextualFileFollowUp || (explicitSelection \u0026\u0026 !!lastUserFileCommand))) {\n  chatExecutionGuard = true;\n  chatGuardMessage = \u0027This looks like a file/tool operation. Switch to Direct Command to run it safely.\u0027;\n}\n\nreturn {\n  json: {\n    mode,\n    content: normalizedContent,\n    historyText,\n    lastFilePath,\n    lastUserFileCommand,\n    chatExecutionGuard,\n    chatGuardMessage,\n  },\n};"}},{"id":"node-switch-mode","name":"Mode Router","type":"n8n-nodes-base.switch","typeVersion":3.4,"position":[400,200],"parameters":{"mode":"rules","rules":{"values":[{"renameOutput":false,"outputIndex":0,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.mode }}","rightValue":"chat","operator":{"type":"string","operation":"equals"},"id":"cond-1"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":1,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.mode }}","rightValue":"tool","operator":{"type":"string","operation":"equals"},"id":"cond-2"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":2,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.mode }}","rightValue":"task","operator":{"type":"string","operation":"equals"},"id":"cond-3"}],"combinator":"and"}}]},"options":{"fallbackOutput":0}}},{"id":"node-tool-parse","name":"Ollama Tool Parse","type":"n8n-nodes-local-ai-manager.localAiManager","typeVersion":1,"position":[600,200],"parameters":{"connectionType":"local","modelName":"llama3.2","systemDirective":"You are a proposal generator for Axiom Nexus. Return one STRICT JSON object only. The parser will normalize and validate final execution.\n\nYou are the tool-planning brain for Axiom Nexus.\nReturn STRICT JSON only. No prose, no markdown, no backticks.\n\nOutput schema exactly:\n{\n  \"action\": \"write_file\" | \"read_file\" | \"list_directory\",\n  \"path\": \"absolute path or filename\",\n  \"writeMode\": \"overwrite\" | \"append\" | \"line_edit\",\n  \"content\": \"final text to write when not line_edit\",\n  \"lineEdits\": [\n    { \"line\": 2, \"text\": \"replacement text\" }\n  ],\n  \"append\": true | false,\n  \"confidence\": 0.00-1.00\n}\n\nRules:\n- Resolve references like \"it\" / \"that file\" from context.\n- If user gives line-based instructions, use writeMode=\"line_edit\" + lineEdits.\n- For factual placeholders, return final factual value (example: \"capital of Slovakia\" =\u003e \"Bratislava\").\n- If user asks for N items and spacing (example: \"each two lines\"), generate exactly N entries with correct blank lines in content.\n- Keep paths inside C:/Users/Martin/.n8n-files/Axiom_Files unless explicitly told otherwise.\n- Confidence must reflect ambiguity.\n- If the user says \"it\"/\"that file\"/\"latest file\" without a new path, you must reuse the provided target file path exactly.","userInput":"={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"}},{"id":"node-parse-json","name":"Parse JSON","type":"n8n-nodes-local-ai-manager.axiomParser","typeVersion":1,"position":[800,200],"parameters":{"responseField":"response","plannerTierField":"plannerTier","originalCommand":"={{ $node[\"Extract Input\"].json.content || \"\" }}","lastFilePath":"={{ $node[\"Extract Input\"].json.lastFilePath || \"\" }}","lastUserFileCommand":"={{ $node[\"Extract Input\"].json.lastUserFileCommand || \"\" }}","baseDir":"C:/Users/Martin/.n8n-files/Axiom_Files","defaultWriteName":"helloWorld.txt","clarifyOnError":true}},{"id":"node-switch-tool","name":"Tool Hub","type":"n8n-nodes-base.switch","typeVersion":3.4,"position":[1400,200],"parameters":{"mode":"rules","options":{"fallbackOutput":3},"rules":{"values":[{"renameOutput":false,"outputIndex":0,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.action }}","rightValue":"write_file","operator":{"type":"string","operation":"equals"},"id":"cond-a"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":1,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.action }}","rightValue":"read_file","operator":{"type":"string","operation":"equals"},"id":"cond-b"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":2,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.action }}","rightValue":"list_directory","operator":{"type":"string","operation":"equals"},"id":"cond-c"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":3,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.action }}","rightValue":"clarify","operator":{"type":"string","operation":"equals"},"id":"cond-d-clarify"}],"combinator":"and"}},{"renameOutput":false,"outputIndex":3,"conditions":{"options":{"caseSensitive":true,"leftValue":"","typeValidation":"strict","version":3},"conditions":[{"leftValue":"={{ $json.action }}","rightValue":"error","operator":{"type":"string","operation":"equals"},"id":"cond-e-error"}],"combinator":"and"}}]}}},{"id":"node-prepare-write","name":"Prepare Write Binary","type":"n8n-nodes-base.code","typeVersion":1,"position":[1500,100],"parameters":{"mode":"runOnceForEachItem","jsCode":"const text = String($json.content ?? \u0027\u0027);\nconst fileName = String(($json.fullPath || \u0027output.txt\u0027).split(\u0027/\u0027).pop() || \u0027output.txt\u0027);\n\nreturn {\n  json: $json,\n  binary: {\n    content: {\n      data: Buffer.from(text, \u0027utf8\u0027).toString(\u0027base64\u0027),\n      mimeType: \u0027text/plain\u0027,\n      fileName,\n    },\n  },\n};"}},{"id":"node-tool-write","name":"Tool: Write File","type":"n8n-nodes-base.readWriteFile","typeVersion":1,"position":[1600,100],"parameters":{"operation":"write","fileName":"={{$json.fullPath}}","dataPropertyName":"content","options":{"append":"={{$json.append || false}}"}}},{"id":"node-tool-read","name":"Tool: Read File","type":"n8n-nodes-base.readWriteFile","typeVersion":1,"position":[1600,200],"parameters":{"operation":"read","fileSelector":"={{$json.fullPath}}","options":{}},"alwaysOutputData":true},{"id":"node-tool-list","name":"Tool: List Directory","type":"n8n-nodes-base.readWriteFile","typeVersion":1,"position":[1600,300],"parameters":{"operation":"read","fileSelector":"={{ ($json.fullPath || \"\").endsWith(\"/\") ? ($json.fullPath + \"*\") : ($json.fullPath + \"/*\") }}","options":{}}},{"id":"node-tool-error","name":"Error Tool Format","type":"n8n-nodes-base.set","typeVersion":1,"position":[1600,400],"parameters":{"keepOnlySet":false,"values":{"string":[{"name":"response","value":"={{ $json.routeMode === \"plan\" ? ((\"Plan review required before execution:\n\n\" + ($json.planReadable || \"[ACTION: CHANGE]\n[TARGET: unresolved]\n[USING: clarify]\") + \"\n\nOpen Plan Builder (or switch to Direct Command with explicit confirmation) to run.\")) : ($json.message || \"Unable to resolve a safe action. Please specify: read file, write file with content, or list directory.\") }}"}]}}},{"id":"node-format-write","name":"Format Write Output","type":"n8n-nodes-base.set","typeVersion":1,"position":[1800,100],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"=I have successfully written the file to {{$json.fullPath || $json.fileName || $json.path || \"C:/Users/Martin/.n8n-files/Axiom_Files\"}}."}]}}},{"id":"node-format-read","name":"Format Read Output","type":"n8n-nodes-base.code","typeVersion":1,"position":[1800,200],"parameters":{"jsCode":"let content = \u0027\u0027;\ntry {\n  const buffer = await this.helpers.getBinaryDataBuffer(0, \u0027data\u0027);\n  content = buffer.toString(\u0027utf8\u0027);\n} catch (e) {\n  content = \u0027\u0027;\n}\nif (!content \u0026\u0026 typeof $json.data === \u0027string\u0027) content = String($json.data);\nconst fileLabel = $json.fileName ? ` (${String($json.fileName)})` : \u0027\u0027;\nif (!content) {\n  return { json: { response: `Unable to read file contents${fileLabel}.` } };\n}\nreturn { json: { response: `File Contents${fileLabel}:\\n\\n${content}` } };"}},{"id":"node-format-list","name":"Format List Output","type":"n8n-nodes-base.set","typeVersion":1,"position":[1800,300],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"=Directory Contents:\n\n{{JSON.stringify($input.all().map(i =\u003e i.json.fileName), null, 2)}}"}]}}},{"id":"node-ollama-task","name":"Ollama Task Mode","type":"n8n-nodes-local-ai-manager.localAiManager","typeVersion":1,"position":[600,500],"parameters":{"connectionType":"local","modelName":"llama3.2","systemDirective":"You are OpenClaw, processing an automation task. The user is outlining a multi-step objective for you.","userInput":"={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"}},{"id":"node-format-task","name":"Format Task Output","type":"n8n-nodes-base.set","typeVersion":1,"position":[800,500],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"={{$node[\"Ollama Task Mode\"].json.response}}"}]}}},{"id":"node-chat","name":"Ollama Chat","type":"n8n-nodes-local-ai-manager.localAiManager","typeVersion":1,"position":[600,0],"parameters":{"connectionType":"local","modelName":"llama3.2","systemDirective":"You are OpenClaw, the Sovereign AI Engine for Axiom Nexus. Be helpful and concise.","userInput":"={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"}},{"id":"node-format-chat","name":"Format Chat Output","type":"n8n-nodes-base.set","typeVersion":1,"position":[800,0],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"={{$node[\"Ollama Chat\"].json.response}}"}]}}},{"id":"node-respond","name":"Final Response","type":"n8n-nodes-base.respondToWebhook","typeVersion":1,"position":[2200,200],"parameters":{"respondWith":"allIncomingItems"}},{"id":"node-unify-output","name":"Unify Output","type":"n8n-nodes-base.set","typeVersion":1,"position":[2000,200],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"={{ (($json.response \u0026\u0026 String($json.response).trim().length \u003e 0) ? $json.response : ($json.message || \"Workflow completed, but no response payload was generated.\")) }}"}]}}},{"id":"node-save-history","name":"Save History","type":"n8n-nodes-base.set","typeVersion":1,"position":[2100,200],"parameters":{"keepOnlySet":false,"values":{}}},{"id":"node-sandbox-check","name":"Sandbox Check","type":"n8n-nodes-base.if","typeVersion":1,"position":[900,200],"parameters":{"conditions":{"boolean":[{"value1":"={{$json.isExternal}}","value2":true}]}}},{"id":"node-ask-permission","name":"Ask Hub Permission","type":"n8n-nodes-base.httpRequest","typeVersion":4.1,"position":[900,400],"parameters":{"method":"POST","url":"http://localhost:4000/api/notify","sendBody":true,"bodyParameters":{"parameters":[{"name":"type","value":"permission_request"},{"name":"message","value":"Axiom Nexus is requesting {{$json.action}} access to external file: {{$json.fullPath}}. Allow?"},{"name":"resumeUrl","value":"http://localhost:5678/webhook-waiting/{{$execution.id}}/approve"}]},"options":{}}},{"id":"node-wait-permission","name":"Wait For Approval","type":"n8n-nodes-base.wait","typeVersion":1,"position":[1050,400],"parameters":{"resume":"webhook","webhookPath":"approve"}},{"id":"node-restore-context","name":"Restore Context","type":"n8n-nodes-base.set","typeVersion":1,"position":[1200,400],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"action","value":"={{$node[\u0027Parse JSON\u0027].json.action}}"},{"name":"fullPath","value":"={{$node[\u0027Parse JSON\u0027].json.fullPath}}"},{"name":"content","value":"={{$node[\u0027Parse JSON\u0027].json.content}}"}]}}},{"id":"node-tool-parse-gate","name":"Tool Parse Confidence Gate","type":"n8n-nodes-base.if","typeVersion":1,"position":[980,200],"parameters":{"conditions":{"boolean":[{"value1":"={{ ($json.action === \"clarify\") || ((String($json.parserTier || \"\") === \"heavy\") \u0026\u0026 $json.action !== \"error\") || (($json.action !== \"error\") \u0026\u0026 Number($json.confidence || 0) \u003e= 0.72 \u0026\u0026 ($json.action !== \"write_file\" || (String($json.content || \"\").trim().length \u003e 0 \u0026\u0026 !!$json.hasSpecificFilePath))) }}","value2":true}]}}},{"id":"node-tool-parse-heavy","name":"Ollama Tool Parse Heavy","type":"n8n-nodes-local-ai-manager.localAiManager","typeVersion":1,"position":[980,360],"parameters":{"connectionType":"local","modelName":"qwen2.5:3b","systemDirective":"You are a proposal generator for Axiom Nexus. Return one STRICT JSON object only. The parser will normalize and validate final execution.\n\nYou are the high-accuracy planning brain for Axiom Nexus.\nReturn one STRICT JSON object only.\n\nSchema:\n{\n  \"action\": \"write_file\" | \"read_file\" | \"list_directory\",\n  \"path\": \"absolute path or filename\",\n  \"writeMode\": \"overwrite\" | \"append\" | \"line_edit\",\n  \"content\": \"final write text\",\n  \"lineEdits\": [\n    { \"line\": 2, \"text\": \"replacement text\" }\n  ],\n  \"append\": true | false,\n  \"confidence\": 0.00-1.00\n}\n\nHard requirements:\n- No markdown, no explanations.\n- Resolve \"it/that file\" and use provided target path.\n- For line instructions, always return explicit numeric lineEdits.\n- Resolve factual placeholders into concrete values (example: Slovakia capital -\u003e Bratislava).\n- Respect cardinality and spacing requests (example: \"3 biggest capitals\", \"each two lines\").\n- Prefer coherent final content over meta-instructions.\n- Keep path within C:/Users/Martin/.n8n-files/Axiom_Files unless user explicitly requests otherwise.\n- If the user says \"it\"/\"that file\"/\"latest file\" without a new path, reuse the provided target file path exactly.","userInput":"={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"}},{"parameters":{"jsCode":"const content = String($json.content || \u0027\u0027);\nconst lower = content.toLowerCase();\n\nconst evalSummary = {\n  hasFollowUpRef: /\\b(it|this|that|same|latest|last|previous|current)\\b/.test(lower),\n  hasActionVerb: /\\b(write|put|add|append|update|edit|modify|change|replace|rewrite|read|open|list|create|make|include|insert|format|transform|adjust)\\b/.test(lower),\n  hasExplicitPath: /[A-Za-z]:[\\\\/]/.test(content),\n  mentionsFile: /\\b(file|txt|text|document|folder|directory)\\b/.test(lower),\n  modeBeforeRouter: String($json.mode || \u0027\u0027),\n};\n\nreturn {\n  json: {\n    ...$json,\n    inputEvaluation: evalSummary,\n  },\n};"},"id":"node-evaluate-input","name":"Evaluate Input","type":"n8n-nodes-base.code","typeVersion":1,"position":[300,200]},{"parameters":{"jsCode":"const originalCommand = String($node[\u0027Extract Input\u0027].json.content || \u0027\u0027);\nconst lowerCommand = originalCommand.toLowerCase();\nconst fullPath = String($json.fullPath || $json.fileName || $json.path || \u0027\u0027).replace(/\\\\/g, \u0027/\u0027);\nconst plannedContent = String($json.content ?? \u0027\u0027);\nconst action = String($json.action || \u0027\u0027);\n\nconst out = {\n  ...$json,\n  verification: {\n    ok: true,\n    reason: \u0027ok\u0027,\n    checkedPath: fullPath,\n    mode: action || \u0027unknown\u0027,\n    verifiedBy: \u0027plan\u0027,\n  },\n};\n\nif (action === \u0027write_file\u0027) {\n  if (!fullPath) {\n    out.verification = { ok: false, reason: \u0027Missing target file path\u0027, checkedPath: fullPath, mode: \u0027write\u0027, verifiedBy: \u0027plan\u0027 };\n    return { json: out };\n  }\n\n  if (!plannedContent.trim()) {\n    out.verification = { ok: false, reason: \u0027Write plan has empty content\u0027, checkedPath: fullPath, mode: \u0027write\u0027, verifiedBy: \u0027plan\u0027 };\n    return { json: out };\n  }\n\n  const isSpaceIntent = /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerCommand);\n\n  if (isSpaceIntent) {\n    const letters = (plannedContent.match(/[A-Za-z]/g) || []).length;\n    const spaced = (plannedContent.match(/[A-Za-z] /g) || []).length;\n    const ratio = letters \u003e 0 ? (spaced / letters) : 0;\n    const ok = letters \u003e 0 \u0026\u0026 ratio \u003e= 0.85;\n    out.verification = {\n      ok,\n      reason: ok ? \u0027ok\u0027 : `Planned content does not apply space-after-each-letter (ratio ${ratio.toFixed(2)})`,\n      checkedPath: fullPath,\n      mode: \u0027write\u0027,\n      verifiedBy: \u0027plan\u0027,\n      ratio,\n    };\n    return { json: out };\n  }\n}\n\nreturn { json: out };"},"id":"node-verify-tool-result","name":"Verify Tool Result","type":"n8n-nodes-base.code","typeVersion":1,"position":[1700,100]},{"parameters":{"conditions":{"boolean":[{"value1":"={{$json.verification \u0026\u0026 $json.verification.ok === true}}","value2":true}]}},"id":"node-write-verification-gate","name":"Write Verification Gate","type":"n8n-nodes-base.if","typeVersion":1,"position":[1750,100]},{"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"=Write verification failed for {{$json.verification.checkedPath || $json.fullPath || \"target file\"}}: {{$json.verification.reason || \"Unknown reason\"}}."}]}},"id":"node-format-write-error","name":"Format Write Error","type":"n8n-nodes-base.set","typeVersion":1,"position":[1900,180]},{"parameters":{"jsCode":"const response = String($json.response || \u0027\u0027).trim();\nif (!response) {\n  return { json: { ...$json, response: ($json.message ? String($json.message) : \u0027Workflow completed, but no response payload was generated.\u0027) } };\n}\nreturn { json: { ...$json, response } };"},"id":"node-evaluate-output","name":"Evaluate Output","type":"n8n-nodes-base.code","typeVersion":1,"position":[2050,200]},{"parameters":{"keepOnlySet":false,"values":{"string":[{"name":"plannerTier","value":"heavy"}]}},"id":"node-mark-heavy-planner","name":"Mark Heavy Planner","type":"n8n-nodes-base.set","typeVersion":1,"position":[1000,420]},{"parameters":{"conditions":{"boolean":[{"value1":"={{ !!($json.postReadTransform || $node[\"Parse JSON\"].json.postReadTransform) }}","value2":true}]}},"id":"node-read-transform-gate","name":"Read Transform Gate","type":"n8n-nodes-base.if","typeVersion":1,"position":[1750,250]},{"parameters":{"transformField":"postReadTransform","fullPathField":"fullPath","sourceBinaryProperty":"data","fallbackTextField":"data"},"id":"node-apply-deterministic-transform","name":"Apply Deterministic Transform","type":"n8n-nodes-local-ai-manager.axiomTransform","typeVersion":1,"position":[1900,250]},{"parameters":{"conditions":{"boolean":[{"value1":"={{ $json.action === \u0027write_file\u0027 \u0026\u0026 String($json.content || \u0027\u0027).length \u003e 0 }}","value2":true}]}},"id":"node-transform-output-gate","name":"Transform Output Gate","type":"n8n-nodes-base.if","typeVersion":1,"position":[2050,250]},{"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"={{ $json.message ? (\u0027Transform failed: \u0027 + $json.message) : (\u0027Transform failed for \u0027 + ($json.fullPath || \u0027target file\u0027)) }}"}]}},"id":"node-format-transform-error","name":"Format Transform Error","type":"n8n-nodes-base.set","typeVersion":1,"position":[2200,320]},{"id":"node-bind-transform-context","name":"Bind Transform Context","type":"n8n-nodes-base.code","typeVersion":1,"position":[1700,250],"parameters":{"mode":"runOnceForEachItem","jsCode":"const originalCommand = String($node[\"Extract Input\"].json.content || \u0027\u0027).toLowerCase();\nconst spaceIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(originalCommand) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(originalCommand) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(originalCommand) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(originalCommand) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(originalCommand);\n\nlet plan = $node[\"Parse JSON\"].json.postReadTransform;\nif (!plan \u0026\u0026 spaceIntent) {\n  plan = { type: \u0027space_letters\u0027 };\n}\n\nif (plan \u0026\u0026 plan.type === \u0027line_edit\u0027 \u0026\u0026 Array.isArray(plan.lineEdits)) {\n  plan = {\n    ...plan,\n    lineEdits: plan.lineEdits\n      .map((e) =\u003e {\n        const raw = String((e \u0026\u0026 e.text) || \u0027\u0027);\n        const q = raw.match(/\"([^\"]+)\"/) || raw.match(/\u0027([^\u0027]+)\u0027/);\n        let text = q ? q[1] : raw;\n        text = text.replace(/^\\s*(?:text|line|content)\\s*(?::|is)?\\s*/i, \u0027\u0027);\n        text = text.replace(/^\\s*(?:is|to|as|should\\s+be|should\\s+say|it\\s+is|it\\s+says?|says?)\\s*/i, \u0027\u0027).trim();\n        text = text.replace(/^[\u0027\"]|[\u0027\"]$/g, \u0027\u0027).trim();\n        return { line: Number((e \u0026\u0026 e.line) || 0), text };\n      })\n      .filter((e) =\u003e Number.isFinite(e.line) \u0026\u0026 e.line \u003e 0 \u0026\u0026 e.text.length \u003e 0),\n  };\n}\n\nconst fullPath = String($node[\"Parse JSON\"].json.fullPath || $json.fullPath || $json.path || \u0027\u0027).replace(/\\\\/g, \u0027/\u0027);\n\nreturn {\n  json: {\n    ...$json,\n    fullPath,\n    path: fullPath || $json.path || \u0027\u0027,\n    postReadTransform: plan,\n  },\n  binary: $binary,\n};"}},{"id":"node-chat-safety-gate","name":"Chat Safety Gate","type":"n8n-nodes-base.if","typeVersion":1,"position":[600,0],"parameters":{"conditions":{"boolean":[{"value1":"={{$json.chatExecutionGuard === true}}","value2":true}]}}},{"id":"node-chat-policy-response","name":"Chat Execution Policy","type":"n8n-nodes-base.set","typeVersion":1,"position":[800,-80],"parameters":{"keepOnlySet":true,"values":{"string":[{"name":"response","value":"={{ $json.chatGuardMessage || \"This looks like a file/tool operation. Switch to Direct Command to run it safely.\" }}"}]}}}],"connections":{"Webhook Input":{"main":[[{"node":"Extract Input","type":"main","index":0}]]},"Extract Input":{"main":[[{"node":"Evaluate Input","type":"main","index":0}]]},"Mode Router":{"main":[[{"node":"Chat Safety Gate","type":"main","index":0}],[{"node":"Ollama Tool Parse","type":"main","index":0}],[{"node":"Ollama Task Mode","type":"main","index":0}]]},"Ollama Tool Parse":{"main":[[{"node":"Parse JSON","type":"main","index":0}]]},"Tool Hub":{"main":[[{"node":"Prepare Write Binary","type":"main","index":0}],[{"node":"Tool: Read File","type":"main","index":0}],[{"node":"Tool: List Directory","type":"main","index":0}],[{"node":"Error Tool Format","type":"main","index":0}]]},"Prepare Write Binary":{"main":[[{"node":"Tool: Write File","type":"main","index":0}]]},"Tool: Write File":{"main":[[{"node":"Verify Tool Result","type":"main","index":0}]]},"Tool: Read File":{"main":[[{"node":"Bind Transform Context","type":"main","index":0}]]},"Tool: List Directory":{"main":[[{"node":"Format List Output","type":"main","index":0}]]},"Ollama Task Mode":{"main":[[{"node":"Format Task Output","type":"main","index":0}]]},"Ollama Chat":{"main":[[{"node":"Format Chat Output","type":"main","index":0}]]},"Format Chat Output":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Format Write Output":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Format Read Output":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Format List Output":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Error Tool Format":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Format Task Output":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Unify Output":{"main":[[{"node":"Evaluate Output","type":"main","index":0}]]},"Save History":{"main":[[{"node":"Final Response","type":"main","index":0}]]},"Parse JSON":{"main":[[{"node":"Tool Parse Confidence Gate","type":"main","index":0}]]},"Sandbox Check":{"main":[[{"node":"Ask Hub Permission","type":"main","index":0}],[{"node":"Tool Hub","type":"main","index":0}]]},"Ask Hub Permission":{"main":[[{"node":"Wait For Approval","type":"main","index":0}]]},"Wait For Approval":{"main":[[{"node":"Restore Context","type":"main","index":0}]]},"Restore Context":{"main":[[{"node":"Tool Hub","type":"main","index":0}]]},"Tool Parse Confidence Gate":{"main":[[{"node":"Sandbox Check","type":"main","index":0}],[{"node":"Ollama Tool Parse Heavy","type":"main","index":0}]]},"Ollama Tool Parse Heavy":{"main":[[{"node":"Mark Heavy Planner","type":"main","index":0}]]},"Evaluate Input":{"main":[[{"node":"Mode Router","type":"main","index":0}]]},"Verify Tool Result":{"main":[[{"node":"Write Verification Gate","type":"main","index":0}]]},"Write Verification Gate":{"main":[[{"node":"Format Write Output","type":"main","index":0}],[{"node":"Format Write Error","type":"main","index":0}]]},"Format Write Error":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Evaluate Output":{"main":[[{"node":"Save History","type":"main","index":0}]]},"Mark Heavy Planner":{"main":[[{"node":"Parse JSON","type":"main","index":0}]]},"Read Transform Gate":{"main":[[{"node":"Apply Deterministic Transform","type":"main","index":0}],[{"node":"Format Read Output","type":"main","index":0}]]},"Apply Deterministic Transform":{"main":[[{"node":"Transform Output Gate","type":"main","index":0}]]},"Transform Output Gate":{"main":[[{"node":"Prepare Write Binary","type":"main","index":0}],[{"node":"Format Transform Error","type":"main","index":0}]]},"Format Transform Error":{"main":[[{"node":"Unify Output","type":"main","index":0}]]},"Bind Transform Context":{"main":[[{"node":"Read Transform Gate","type":"main","index":0}]]},"Chat Safety Gate":{"main":[[{"node":"Chat Execution Policy","type":"main","index":0}],[{"node":"Ollama Chat","type":"main","index":0}]]},"Chat Execution Policy":{"main":[[{"node":"Unify Output","type":"main","index":0}]]}},"settings":{},"staticData":{},"meta":{"templateCredsSetupCompleted":true},"pinData":{},"versionId":"7ef2cd25-fa0c-41a0-909b-bc6e640ecac4","activeVersionId":"7ef2cd25-fa0c-41a0-909b-bc6e640ecac4","versionCounter":208,"triggerCount":1,"tags":[],"shared":[{"updatedAt":"2026-03-06T20:46:21.914Z","createdAt":"2026-03-06T20:46:21.914Z","role":"workflow:owner","workflowId":"dTzRbVa8bRBZTZ6O","projectId":"AOPnDcQznvPwRh5X","project":{"updatedAt":"2026-03-06T19:07:03.111Z","createdAt":"2026-03-05T23:05:29.959Z","id":"AOPnDcQznvPwRh5X","name":"Martin Baculik \u003cbaculik.martin@gmail.com\u003e","type":"personal","icon":null,"description":null,"creatorId":"65a5e9e6-761a-4da2-ab31-490847af9205"}}],"versionMetadata":{"name":null,"description":null}}
+{
+  "updatedAt": "2026-03-07T21:35:34.000Z",
+  "createdAt": "2026-03-06T20:46:21.912Z",
+  "id": "dTzRbVa8bRBZTZ6O",
+  "name": "Axiom Master Router",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "node-webhook",
+      "name": "Webhook Input",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "95ddefd0-1bdc-4b1a-a1bc-7c6c963885f0",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "axiom-router-exec",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "node-extract",
+      "name": "Extract Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        200,
+        200
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $input.item.json.body || {};\nconst text = String(body.content || '').trim();\nlet mode = String(body.mode || 'chat').toLowerCase();\n\nif (mode === 'direct' || mode === 'direct_command' || mode === 'command') {\n  mode = 'tool';\n}\n\nconst history = Array.isArray(body.history) ? body.history : [];\nconst historyEntries = history\n  .slice(-20)\n  .map((h) => ({\n    sender: String((h && h.sender) || ''),\n    text: String((h && h.text) || ''),\n    timestamp: String((h && h.timestamp) || ''),\n  }));\n\nconst historyText = historyEntries\n  .map((h) => `${h.sender || 'unknown'}: ${h.text}`)\n  .join('\\n');\n\nconst cleanupPath = (raw) => {\n  let p = String(raw || '').replace(/\\\\/g, '/').trim();\n  p = p.replace(/^[\\s\"'\u00060]+|[\\s\"'\u00060]+$/g, '');\n  p = p.replace(/[\\]\\)\\}]+$/g, '');\n  p = p.replace(/[.,;:!?]+$/g, '');\n  return p;\n};\n\nconst pathRegex = /([A-Za-z]:[\\\\/][^\\n\\r]+)/g;\n\nconst extractPathCandidates = (msg) => {\n  const source = String(msg || '');\n  const out = [];\n\n  const targetLine = source.match(/Target file path:\\s*([^\\n\\r]+)/i);\n  if (targetLine && targetLine[1]) out.push(targetLine[1]);\n\n  const commonInline = [...source.matchAll(/(?:file\\s+to|path\\s*:|at)\\s*([A-Za-z]:[\\\\/][^\\n\\r]+)/gi)];\n  for (const m of commonInline) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  const generic = [...source.matchAll(pathRegex)];\n  for (const m of generic) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  return out;\n};\n\nconst extractLastPath = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const msg = entries[i].text || '';\n    const matches = extractPathCandidates(msg);\n    for (let j = matches.length - 1; j >= 0; j--) {\n      const p = cleanupPath(matches[j] || '');\n      if (p) return p;\n    }\n  }\n  return '';\n};\n\nconst fileIntentRegex = /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move|read|open|show|list)\\b[\\s\\S]*\\b(file|txt|text|document|note|folder|directory|files?)\\b/i;\n\nconst extractLastUserFileCommand = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const e = entries[i];\n    if ((e.sender || '').toLowerCase() !== 'user') continue;\n    if (fileIntentRegex.test(e.text || '')) return String(e.text || '').trim();\n  }\n  return '';\n};\n\nconst readTextFileSafe = (absolutePath) => {\n  try {\n    const fs = require('fs');\n    const p = cleanupPath(absolutePath);\n    if (!p || !fs.existsSync(p)) return '';\n    return String(fs.readFileSync(p, 'utf8') || '').slice(0, 5000);\n  } catch (e) {\n    return '';\n  }\n};\n\nconst lastFilePath = cleanupPath(extractLastPath(historyEntries));\nconst lastUserFileCommand = extractLastUserFileCommand(historyEntries);\n\nconst shortFollowUp = /^\\s*(do it|you do it|make it|please do it|i need you to make it|i need you top make it|just do it)\\s*[.!?]*\\s*$/i.test(text);\nconst optionSelectionMatch = text.match(/^\\s*(?:option\\s*)?(1|2|3|4)\\s*$/i);\n\nconst lowerText = text.toLowerCase();\nconst hasContextPronoun = /\\b(it|this|that|same)\\b/.test(lowerText);\nconst hasWriteVerb = /\\b(write|put|add|append|update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|create|make|include|insert|format|transform|adjust|rename|renmae|move)\\b/.test(lowerText);\nconst hasLineIntent = /\\b(?:\\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\\s+line\\b/.test(lowerText);\nconst hasLatestFileReference = /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/.test(lowerText);\nconst hasSpacingTransformIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerText) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\bblank\\s+lines?\\b[\\s\\S]*\\bbetween\\s+lines?\\b/.test(lowerText) ||\n  /\\bbetween\\s+words?\\b[\\s\\S]*\\bspace\\b/.test(lowerText);\nconst hasReplaceIntent = /\\breplace\\b[\\s\\S]*\\bwith\\b/.test(lowerText);\nconst hasTransformFollowUp = hasSpacingTransformIntent || hasReplaceIntent;\n\nlet normalizedContent = text;\n\nif (mode === 'tool' && shortFollowUp && lastUserFileCommand) {\n  normalizedContent = lastUserFileCommand;\n}\n\nif (mode === 'tool' && optionSelectionMatch && lastUserFileCommand) {\n  normalizedContent = `${lastUserFileCommand}\\n\\nSelection: ${optionSelectionMatch[1]}`;\n}\n\nconst needsContextBinding = !!lastFilePath && (\n  /\\b(that|this|same)\\s+file\\b/.test(lowerText) ||\n  /\\b(?:in|into)\\s+it\\b/.test(lowerText) ||\n  hasLatestFileReference ||\n  (hasContextPronoun && hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  (!!optionSelectionMatch && mode === 'tool')\n);\n\nif (needsContextBinding) {\n  if (!/Target file path:/i.test(normalizedContent)) {\n    normalizedContent += `\\n\\nTarget file path: ${lastFilePath}`;\n  }\n  const currentFileContent = readTextFileSafe(lastFilePath);\n  if (currentFileContent) {\n    normalizedContent += `\\n\\nCurrent file content:\\n${currentFileContent}`;\n  }\n}\n\nconst toolIntent = [\n  /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(read|open|show)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(list|show)\\b.*\\b(directory|folder|files?)\\b/,\n  /\\b(make|create)\\b.*\\b(folder|directory)\\b/,\n  /\\b(that|this|same)\\s+file\\b/,\n  /\\b(?:in|into)\\s+it\\b/,\n  /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/,\n  /\\bmake\\s+me\\b.*\\b(txt|file)\\b/,\n  /\\bhello\\s+world\\b.*\\b(txt|file)\\b/,\n].some((r) => r.test(normalizedContent.toLowerCase()));\n\nconst explicitSelection = /^\\s*(?:option\\s*)?[1-4]\\s*$/i.test(text);\nconst contextualFileFollowUp = !!lastFilePath && (\n  ((/\\b(it|this|that|same)\\b/.test(lowerText) || /\\b(?:in|into)\\s+it\\b/.test(lowerText) || hasLatestFileReference) && hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  /^\\s*text\\s+is\\b/.test(lowerText) ||\n  /^\\s*insert\\b/.test(lowerText) ||\n  /^\\s*add\\b/.test(lowerText) ||\n  /^\\s*replace\\b/.test(lowerText)\n);\n\nlet chatExecutionGuard = false;\nlet chatGuardMessage = '';\nif (mode === 'chat' && (toolIntent || shortFollowUp || contextualFileFollowUp || (explicitSelection && !!lastUserFileCommand))) {\n  chatExecutionGuard = true;\n  chatGuardMessage = 'This looks like a file/tool operation. Switch to Direct Command to run it safely.';\n}\n\nreturn {\n  json: {\n    mode,\n    content: normalizedContent,\n    historyText,\n    lastFilePath,\n    lastUserFileCommand,\n    chatExecutionGuard,\n    chatGuardMessage,\n  },\n};"
+      }
+    },
+    {
+      "id": "node-switch-mode",
+      "name": "Mode Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        200
+      ],
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "renameOutput": false,
+              "outputIndex": 0,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.mode }}",
+                    "rightValue": "chat",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-1"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 1,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.mode }}",
+                    "rightValue": "tool",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-2"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 2,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.mode }}",
+                    "rightValue": "task",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-3"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 0
+        }
+      }
+    },
+    {
+      "id": "node-tool-parse",
+      "name": "Ollama Tool Parse",
+      "type": "n8n-nodes-local-ai-manager.localAiManager",
+      "typeVersion": 1,
+      "position": [
+        600,
+        200
+      ],
+      "parameters": {
+        "connectionType": "local",
+        "modelName": "llama3.2",
+        "systemDirective": "You are a proposal generator for Axiom Nexus. Return one STRICT JSON object only. The parser will normalize and validate final execution.\n\nYou are the tool-planning brain for Axiom Nexus.\nReturn STRICT JSON only. No prose, no markdown, no backticks.\n\nOutput schema exactly:\n{\n  \"action\": \"write_file\" | \"read_file\" | \"list_directory\",\n  \"path\": \"absolute path or filename\",\n  \"writeMode\": \"overwrite\" | \"append\" | \"line_edit\",\n  \"content\": \"final text to write when not line_edit\",\n  \"lineEdits\": [\n    { \"line\": 2, \"text\": \"replacement text\" }\n  ],\n  \"append\": true | false,\n  \"confidence\": 0.00-1.00\n}\n\nRules:\n- Resolve references like \"it\" / \"that file\" from context.\n- If user gives line-based instructions, use writeMode=\"line_edit\" + lineEdits.\n- For factual placeholders, return final factual value (example: \"capital of Slovakia\" => \"Bratislava\").\n- If user asks for N items and spacing (example: \"each two lines\"), generate exactly N entries with correct blank lines in content.\n- Keep paths inside C:/Users/Martin/.n8n-files/Axiom_Files unless explicitly told otherwise.\n- Confidence must reflect ambiguity.\n- If the user says \"it\"/\"that file\"/\"latest file\" without a new path, you must reuse the provided target file path exactly.",
+        "userInput": "={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-parse-json",
+      "name": "Parse JSON",
+      "type": "n8n-nodes-local-ai-manager.axiomParser",
+      "typeVersion": 1,
+      "position": [
+        800,
+        200
+      ],
+      "parameters": {
+        "responseField": "response",
+        "plannerTierField": "plannerTier",
+        "originalCommand": "={{ $node[\"Extract Input\"].json.content || \"\" }}",
+        "lastFilePath": "={{ $node[\"Extract Input\"].json.lastFilePath || \"\" }}",
+        "lastUserFileCommand": "={{ $node[\"Extract Input\"].json.lastUserFileCommand || \"\" }}",
+        "baseDir": "C:/Users/Martin/.n8n-files/Axiom_Files",
+        "defaultWriteName": "helloWorld.txt",
+        "clarifyOnError": true
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-switch-tool",
+      "name": "Tool Hub",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1400,
+        200
+      ],
+      "parameters": {
+        "mode": "rules",
+        "options": {
+          "fallbackOutput": 3
+        },
+        "rules": {
+          "values": [
+            {
+              "renameOutput": false,
+              "outputIndex": 0,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "write_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-a"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 1,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "read_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-b"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 2,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "list_directory",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 3,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "clarify",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-d-clarify"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 3,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "error",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-e-error"
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-prepare-write",
+      "name": "Prepare Write Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        100
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const text = String($json.content ?? '');\nconst fileName = String(($json.fullPath || 'output.txt').split('/').pop() || 'output.txt');\n\nreturn {\n  json: $json,\n  binary: {\n    content: {\n      data: Buffer.from(text, 'utf8').toString('base64'),\n      mimeType: 'text/plain',\n      fileName,\n    },\n  },\n};"
+      }
+    },
+    {
+      "id": "node-tool-write",
+      "name": "Tool: Write File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        100
+      ],
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{$json.fullPath}}",
+        "dataPropertyName": "content",
+        "options": {
+          "append": "={{$json.append || false}}"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-tool-read",
+      "name": "Tool: Read File",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        200
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "={{$json.fullPath}}",
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-tool-list",
+      "name": "Tool: List Directory",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "={{ ($json.fullPath || \"\").endsWith(\"/\") ? ($json.fullPath + \"*\") : ($json.fullPath + \"/*\") }}",
+        "options": {}
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-tool-error",
+      "name": "Error Tool Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        400
+      ],
+      "parameters": {
+        "jsCode": "const isPlan = String($json.routeMode || '') === 'plan';\nif (isPlan) {\n  return { json: { ...$json, status: 'clarify', action: 'clarify', error: '', traceId: $json.traceId || 'no-trace', response: 'Plan review required before execution:\\n\\n' + String($json.planReadable || '[ACTION: CHANGE]\\n[TARGET: unresolved]\\n[USING: clarify]') + '\\n\\nOpen Plan Builder (or switch to Direct Command with explicit confirmation) to run.' } };\n}\nreturn { json: { ...$json, status: 'error', action: 'error', error: $json.message || 'Unable to resolve safe action', traceId: $json.traceId || 'no-trace', response: String($json.message || 'Unable to resolve a safe action. Please specify: read file, write file with content, or list directory.') } };"
+      }
+    },
+    {
+      "id": "node-format-write",
+      "name": "Format Write Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        100
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "=I have successfully written the file to {{$json.fullPath || $json.fileName || $json.path || \"C:/Users/Martin/.n8n-files/Axiom_Files\"}}."
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-format-read",
+      "name": "Format Read Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        200
+      ],
+      "parameters": {
+        "jsCode": "let content = '';\ntry {\n  const buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\n  content = buffer.toString('utf8');\n} catch (e) {\n  content = '';\n}\nif (!content && typeof $json.data === 'string') content = String($json.data);\nconst fileLabel = $json.fileName ? ` (${String($json.fileName)})` : '';\nif (!content) {\n  return { json: { ...$json, status: 'error', action: $json.action || 'read_file', error: 'Empty file or unreadable binary content.', traceId: $json.traceId || 'no-trace', response: `Unable to read file contents${fileLabel}.` } };\n}\nreturn { json: { ...$json, status: 'success', action: $json.action || 'read_file', error: '', traceId: $json.traceId || 'no-trace', response: `File Contents${fileLabel}:\\n\\n${content}` } };"
+      }
+    },
+    {
+      "id": "node-format-list",
+      "name": "Format List Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "=Directory Contents:\n\n{{JSON.stringify($input.all().map(i => i.json.fileName), null, 2)}}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-ollama-task",
+      "name": "Ollama Task Mode",
+      "type": "n8n-nodes-local-ai-manager.localAiManager",
+      "typeVersion": 1,
+      "position": [
+        600,
+        500
+      ],
+      "parameters": {
+        "connectionType": "local",
+        "modelName": "llama3.2",
+        "systemDirective": "You are OpenClaw, processing an automation task. The user is outlining a multi-step objective for you.",
+        "userInput": "={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-format-task",
+      "name": "Format Task Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        800,
+        500
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{$node[\"Ollama Task Mode\"].json.response}}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-chat",
+      "name": "Ollama Chat",
+      "type": "n8n-nodes-local-ai-manager.localAiManager",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "connectionType": "local",
+        "modelName": "llama3.2",
+        "systemDirective": "You are OpenClaw, the Sovereign AI Engine for Axiom Nexus. Be helpful and concise.",
+        "userInput": "={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-format-chat",
+      "name": "Format Chat Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{$node[\"Ollama Chat\"].json.response}}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-respond",
+      "name": "Final Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        200
+      ],
+      "parameters": {
+        "respondWith": "allIncomingItems"
+      }
+    },
+    {
+      "id": "node-unify-output",
+      "name": "Unify Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        200
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ (($json.response && String($json.response).trim().length > 0) ? $json.response : ($json.message || \"Workflow completed, but no response payload was generated.\")) }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-save-history",
+      "name": "Save History",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        200
+      ],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {}
+      }
+    },
+    {
+      "id": "node-sandbox-check",
+      "name": "Sandbox Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.isExternal}}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-ask-permission",
+      "name": "Ask Hub Permission",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        400
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:4000/api/notify",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "type",
+              "value": "permission_request"
+            },
+            {
+              "name": "message",
+              "value": "Axiom Nexus is requesting {{$json.action}} access to external file: {{$json.fullPath}}. Allow?"
+            },
+            {
+              "name": "resumeUrl",
+              "value": "http://localhost:5678/webhook-waiting/{{$execution.id}}/approve"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "node-wait-permission",
+      "name": "Wait For Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "webhookPath": "approve"
+      }
+    },
+    {
+      "id": "node-restore-context",
+      "name": "Restore Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        400
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "action",
+              "value": "={{$node['Parse JSON'].json.action}}"
+            },
+            {
+              "name": "fullPath",
+              "value": "={{$node['Parse JSON'].json.fullPath}}"
+            },
+            {
+              "name": "content",
+              "value": "={{$node['Parse JSON'].json.content}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-tool-parse-gate",
+      "name": "Tool Parse Confidence Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        980,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ ($json.action === \"clarify\") || ((String($json.parserTier || \"\") === \"heavy\") && $json.action !== \"error\") || (($json.action !== \"error\") && Number($json.confidence || 0) >= 0.72 && ($json.action !== \"write_file\" || (String($json.content || \"\").trim().length > 0 && !!$json.hasSpecificFilePath))) }}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-tool-parse-heavy",
+      "name": "Ollama Tool Parse Heavy",
+      "type": "n8n-nodes-local-ai-manager.localAiManager",
+      "typeVersion": 1,
+      "position": [
+        980,
+        360
+      ],
+      "parameters": {
+        "connectionType": "local",
+        "modelName": "qwen2.5:3b",
+        "systemDirective": "You are a proposal generator for Axiom Nexus. Return one STRICT JSON object only. The parser will normalize and validate final execution.\n\nYou are the high-accuracy planning brain for Axiom Nexus.\nReturn one STRICT JSON object only.\n\nSchema:\n{\n  \"action\": \"write_file\" | \"read_file\" | \"list_directory\",\n  \"path\": \"absolute path or filename\",\n  \"writeMode\": \"overwrite\" | \"append\" | \"line_edit\",\n  \"content\": \"final write text\",\n  \"lineEdits\": [\n    { \"line\": 2, \"text\": \"replacement text\" }\n  ],\n  \"append\": true | false,\n  \"confidence\": 0.00-1.00\n}\n\nHard requirements:\n- No markdown, no explanations.\n- Resolve \"it/that file\" and use provided target path.\n- For line instructions, always return explicit numeric lineEdits.\n- Resolve factual placeholders into concrete values (example: Slovakia capital -> Bratislava).\n- Respect cardinality and spacing requests (example: \"3 biggest capitals\", \"each two lines\").\n- Prefer coherent final content over meta-instructions.\n- Keep path within C:/Users/Martin/.n8n-files/Axiom_Files unless user explicitly requests otherwise.\n- If the user says \"it\"/\"that file\"/\"latest file\" without a new path, reuse the provided target file path exactly.",
+        "userInput": "={{ ($node[\"Extract Input\"].json.historyText ? (\"RECENT CONTEXT:\\n\" + $node[\"Extract Input\"].json.historyText + \"\\n\\n\") : \"\") + $node[\"Extract Input\"].json.content }}"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const content = String($json.content || '');\nconst lower = content.toLowerCase();\n\nconst evalSummary = {\n  hasFollowUpRef: /\\b(it|this|that|same|latest|last|previous|current)\\b/.test(lower),\n  hasActionVerb: /\\b(write|put|add|append|update|edit|modify|change|replace|rewrite|read|open|list|create|make|include|insert|format|transform|adjust)\\b/.test(lower),\n  hasExplicitPath: /[A-Za-z]:[\\\\/]/.test(content),\n  mentionsFile: /\\b(file|txt|text|document|folder|directory)\\b/.test(lower),\n  modeBeforeRouter: String($json.mode || ''),\n};\n\nreturn {\n  json: {\n    ...$json,\n    inputEvaluation: evalSummary,\n  },\n};"
+      },
+      "id": "node-evaluate-input",
+      "name": "Evaluate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        300,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const originalCommand = String($node['Extract Input'].json.content || '');\nconst lowerCommand = originalCommand.toLowerCase();\nconst fullPath = String($json.fullPath || $json.fileName || $json.path || '').replace(/\\\\/g, '/');\nconst plannedContent = String($json.content ?? '');\nconst action = String($json.action || '');\n\nconst out = {\n  ...$json,\n  verification: {\n    ok: true,\n    reason: 'ok',\n    checkedPath: fullPath,\n    mode: action || 'unknown',\n    verifiedBy: 'plan',\n  },\n};\n\nif (action === 'write_file') {\n  if (!fullPath) {\n    out.verification = { ok: false, reason: 'Missing target file path', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  if (!plannedContent.trim()) {\n    out.verification = { ok: false, reason: 'Write plan has empty content', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  const isSpaceIntent = /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerCommand);\n\n  if (isSpaceIntent) {\n    const letters = (plannedContent.match(/[A-Za-z]/g) || []).length;\n    const spaced = (plannedContent.match(/[A-Za-z] /g) || []).length;\n    const ratio = letters > 0 ? (spaced / letters) : 0;\n    const ok = letters > 0 && ratio >= 0.85;\n    out.verification = {\n      ok,\n      reason: ok ? 'ok' : `Planned content does not apply space-after-each-letter (ratio ${ratio.toFixed(2)})`,\n      checkedPath: fullPath,\n      mode: 'write',\n      verifiedBy: 'plan',\n      ratio,\n    };\n    return { json: out };\n  }\n}\n\nreturn { json: out };"
+      },
+      "id": "node-verify-tool-result",
+      "name": "Verify Tool Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.verification && $json.verification.ok === true}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-write-verification-gate",
+      "name": "Write Verification Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "=Write verification failed for {{$json.verification.checkedPath || $json.fullPath || \"target file\"}}: {{$json.verification.reason || \"Unknown reason\"}}."
+            },
+            {
+              "name": "status",
+              "value": "error"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": "={{$json.message || \"Execution error\"}}"
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      },
+      "id": "node-format-write-error",
+      "name": "Format Write Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = String($json.response || '').trim();\nif (!response) {\n  return { json: { ...$json, response: ($json.message ? String($json.message) : 'Workflow completed, but no response payload was generated.') } };\n}\nreturn { json: { ...$json, response } };"
+      },
+      "id": "node-evaluate-output",
+      "name": "Evaluate Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "plannerTier",
+              "value": "heavy"
+            }
+          ]
+        }
+      },
+      "id": "node-mark-heavy-planner",
+      "name": "Mark Heavy Planner",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ !!($json.postReadTransform || $node[\"Parse JSON\"].json.postReadTransform) }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-read-transform-gate",
+      "name": "Read Transform Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1750,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "transformField": "postReadTransform",
+        "fullPathField": "fullPath",
+        "sourceBinaryProperty": "data",
+        "fallbackTextField": "data"
+      },
+      "id": "node-apply-deterministic-transform",
+      "name": "Apply Deterministic Transform",
+      "type": "n8n-nodes-local-ai-manager.axiomTransform",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.action === 'write_file' && String($json.content || '').length > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "node-transform-output-gate",
+      "name": "Transform Output Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2050,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ $json.message ? ('Transform failed: ' + $json.message) : ('Transform failed for ' + ($json.fullPath || 'target file')) }}"
+            },
+            {
+              "name": "status",
+              "value": "error"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"unknown\"}}"
+            },
+            {
+              "name": "error",
+              "value": "={{$json.message || \"Execution error\"}}"
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      },
+      "id": "node-format-transform-error",
+      "name": "Format Transform Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        320
+      ]
+    },
+    {
+      "id": "node-bind-transform-context",
+      "name": "Bind Transform Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        250
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const originalCommand = String($node[\"Extract Input\"].json.content || '').toLowerCase();\nconst spaceIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(originalCommand) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(originalCommand) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(originalCommand) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(originalCommand) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(originalCommand);\n\nlet plan = $node[\"Parse JSON\"].json.postReadTransform;\nif (!plan && spaceIntent) {\n  plan = { type: 'space_letters' };\n}\n\nif (plan && plan.type === 'line_edit' && Array.isArray(plan.lineEdits)) {\n  plan = {\n    ...plan,\n    lineEdits: plan.lineEdits\n      .map((e) => {\n        const raw = String((e && e.text) || '');\n        const q = raw.match(/\"([^\"]+)\"/) || raw.match(/'([^']+)'/);\n        let text = q ? q[1] : raw;\n        text = text.replace(/^\\s*(?:text|line|content)\\s*(?::|is)?\\s*/i, '');\n        text = text.replace(/^\\s*(?:is|to|as|should\\s+be|should\\s+say|it\\s+is|it\\s+says?|says?)\\s*/i, '').trim();\n        text = text.replace(/^['\"]|['\"]$/g, '').trim();\n        return { line: Number((e && e.line) || 0), text };\n      })\n      .filter((e) => Number.isFinite(e.line) && e.line > 0 && e.text.length > 0),\n  };\n}\n\nconst fullPath = String($node[\"Parse JSON\"].json.fullPath || $json.fullPath || $json.path || '').replace(/\\\\/g, '/');\n\nreturn {\n  json: {\n    ...$json,\n    fullPath,\n    path: fullPath || $json.path || '',\n    postReadTransform: plan,\n  },\n  binary: $binary,\n};"
+      }
+    },
+    {
+      "id": "node-chat-safety-gate",
+      "name": "Chat Safety Gate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.chatExecutionGuard === true}}",
+              "value2": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-chat-policy-response",
+      "name": "Chat Execution Policy",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -80
+      ],
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "={{ $json.chatGuardMessage || \"This looks like a file/tool operation. Switch to Direct Command to run it safely.\" }}"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Input": {
+      "main": [
+        [
+          {
+            "node": "Extract Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Input": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mode Router": {
+      "main": [
+        [
+          {
+            "node": "Chat Safety Gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Tool Parse",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Task Mode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Tool Parse": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Tool Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Hub": {
+      "main": [
+        [
+          {
+            "node": "Prepare Write Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool: Read File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool: List Directory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Tool Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Write Binary": {
+      "main": [
+        [
+          {
+            "node": "Tool: Write File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Write File": {
+      "main": [
+        [
+          {
+            "node": "Verify Tool Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Read File": {
+      "main": [
+        [
+          {
+            "node": "Bind Transform Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: List Directory": {
+      "main": [
+        [
+          {
+            "node": "Format List Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Task Mode": {
+      "main": [
+        [
+          {
+            "node": "Format Task Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Chat": {
+      "main": [
+        [
+          {
+            "node": "Format Chat Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Chat Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Write Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Read Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format List Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Tool Format": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Task Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unify Output": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save History": {
+      "main": [
+        [
+          {
+            "node": "Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Tool Parse Confidence Gate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sandbox Check": {
+      "main": [
+        [
+          {
+            "node": "Ask Hub Permission",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool Hub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask Hub Permission": {
+      "main": [
+        [
+          {
+            "node": "Wait For Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait For Approval": {
+      "main": [
+        [
+          {
+            "node": "Restore Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Context": {
+      "main": [
+        [
+          {
+            "node": "Tool Hub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool Parse Confidence Gate": {
+      "main": [
+        [
+          {
+            "node": "Sandbox Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Tool Parse Heavy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Tool Parse Heavy": {
+      "main": [
+        [
+          {
+            "node": "Mark Heavy Planner",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Tool Format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Input": {
+      "main": [
+        [
+          {
+            "node": "Mode Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Tool Result": {
+      "main": [
+        [
+          {
+            "node": "Write Verification Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Verification Gate": {
+      "main": [
+        [
+          {
+            "node": "Format Write Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Write Error": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Output": {
+      "main": [
+        [
+          {
+            "node": "Save History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Heavy Planner": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Transform Gate": {
+      "main": [
+        [
+          {
+            "node": "Apply Deterministic Transform",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Read Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Deterministic Transform": {
+      "main": [
+        [
+          {
+            "node": "Transform Output Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Output Gate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Write Binary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Transform Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Transform Error": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bind Transform Context": {
+      "main": [
+        [
+          {
+            "node": "Read Transform Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Safety Gate": {
+      "main": [
+        [
+          {
+            "node": "Chat Execution Policy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Execution Policy": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "versionId": "7ef2cd25-fa0c-41a0-909b-bc6e640ecac4",
+  "activeVersionId": "7ef2cd25-fa0c-41a0-909b-bc6e640ecac4",
+  "versionCounter": 208,
+  "triggerCount": 1,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-03-06T20:46:21.914Z",
+      "createdAt": "2026-03-06T20:46:21.914Z",
+      "role": "workflow:owner",
+      "workflowId": "dTzRbVa8bRBZTZ6O",
+      "projectId": "AOPnDcQznvPwRh5X",
+      "project": {
+        "updatedAt": "2026-03-06T19:07:03.111Z",
+        "createdAt": "2026-03-05T23:05:29.959Z",
+        "id": "AOPnDcQznvPwRh5X",
+        "name": "Martin Baculik <baculik.martin@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "65a5e9e6-761a-4da2-ab31-490847af9205"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": null,
+    "description": null
+  }
+}

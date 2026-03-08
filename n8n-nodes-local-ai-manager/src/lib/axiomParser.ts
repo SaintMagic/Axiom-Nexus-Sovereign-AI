@@ -1,4 +1,4 @@
-export type AxiomAction = 'write_file' | 'read_file' | 'list_directory' | 'error' | 'clarify';
+export type AxiomAction = 'write_file' | 'read_file' | 'list_directory' | 'error' | 'clarify' | 'delete_file';
 
 import {
 	AxiomIRExecutionMode,
@@ -35,13 +35,13 @@ export interface AxiomParseOutput {
 	confidenceBreakdown: Record<string, number>;
 	lineEdits?: Array<{ line: number; text: string }>;
 	postReadTransform?:
-		| { type: 'space_letters' }
-		| { type: 'space_words' }
-		| { type: 'blank_lines_between_lines' }
-		| { type: 'append_with_blank_lines'; blankLines: number; text: string }
-		| { type: 'uppercase_nth'; n: number }
-		| { type: 'replace_text'; from: string; to: string; caseSensitive?: boolean }
-		| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> };
+	| { type: 'space_letters' }
+	| { type: 'space_words' }
+	| { type: 'blank_lines_between_lines' }
+	| { type: 'append_with_blank_lines'; blankLines: number; text: string }
+	| { type: 'uppercase_nth'; n: number }
+	| { type: 'replace_text'; from: string; to: string; caseSensitive?: boolean }
+	| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> };
 	hasSpecificFilePath?: boolean;
 	intentIR?: AxiomIntentIR;
 	routeMode?: AxiomIRExecutionMode;
@@ -170,6 +170,15 @@ const extractFileNameHint = (text: string): string => {
 
 const extractCreatePayload = (text: string): string => {
 	const source = String(text || '');
+
+	// If it's a generic "create a file" command with NO indication of text payload, return empty string.
+	// This prevents miscapturing substrings like "file and" from "create a text file and name it..."
+	const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(source);
+	const hasQuoted = /"([^"]+)"|'([^']+)'/.test(source);
+	if (!hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(source)) {
+		return '';
+	}
+
 	const quoted = extractQuotedText(source);
 	if (quoted) return quoted;
 	const withText = source.match(
@@ -181,7 +190,7 @@ const extractCreatePayload = (text: string): string => {
 	);
 	if (textIs) return textIs[1].trim();
 	const putInto = source.match(
-		/\b(?:write|put|save|append|add|make)\s+(.+?)\s+(?:to|into)\s+(?:the\s+)?(?:file|txt|text|document|[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/i,
+		/\b(?:write|put|save|append|add)\s*(?:text)?\s+(.+?)\s+(?:to|into)\s+(?:the\s+)?(?:file|txt|text|document|[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+)/i,
 	);
 	if (putInto) return putInto[1].trim();
 	const m1 = source.match(/\b(?:create|make)(?:\s+me)?\s+(.+?)\s+in\s+(?:a\s+)?txt\s+file\b/i);
@@ -419,7 +428,7 @@ const inferActionFromCommand = (text: string, contextPath: string): AxiomAction 
 		hasLineEditIntent ||
 		/\breplace\b[\s\S]*\bwith\b/.test(lower) ||
 		/\b(?:every|each)\s+\d+(?:st|nd|rd|th)?\s+letter[^\n\r]*capit/.test(lower);
-	const hasRead = /\b(read|open|show)\b/.test(lower) && /\b(file|txt|text|document|note)\b/.test(lower);
+	const hasRead = /\b(read|open|show)\b/.test(lower) && (/\b(file|txt|text|document|note)\b/.test(lower) || /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower));
 	const hasList = /\b(list|show)\b/.test(lower) && /\b(directory|folder|files?)\b/.test(lower);
 	const hasWrite =
 		/\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rewrite|change|replace)\b/.test(
@@ -631,14 +640,29 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const parsed = parseJsonPayload(String(input.response || '')) || {};
 	const modelConfidenceRaw = Number((parsed as any).confidence);
 	const modelConfidence = Number.isFinite(modelConfidenceRaw) ? modelConfidenceRaw : null;
-	const renameIntent =
-		/\b(rename|renmae|move)\b/.test(lowerCommand) &&
-		(/\b(file|txt|text|document|note)\b/.test(lowerCommand) ||
-			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand));
 
-	const allowedActions: AxiomAction[] = ['write_file', 'read_file', 'list_directory'];
-	const plannerAction = allowedActions.includes(String((parsed as any).action || '').toLowerCase() as AxiomAction)
-		? (String((parsed as any).action).toLowerCase() as AxiomAction)
+	const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(lowerCommand);
+	const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
+	let isCreateFileWithoutPayload = !hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand);
+
+	const extensionChangeIntent =
+		/\bchange\s+(?:the\s+)?extension\b/.test(lowerCommand) ||
+		/\bextension\s+to\s+\.[a-z0-9]{1,10}\b/.test(lowerCommand) ||
+		/\bconvert\b[\s\S]*\.(?:txt|text|md|json|csv|log)\b[\s\S]*\bto\b[\s\S]*\.[a-z0-9]{1,10}\b/.test(lowerCommand);
+	const renameIntent =
+		(/\b(rename|renmae|move)\b/.test(lowerCommand) || extensionChangeIntent) &&
+		(/\b(file|txt|text|document|note|extension)\b/.test(lowerCommand) ||
+			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) ||
+			(!!lastFilePath && extensionChangeIntent));
+
+	const allowedActions: AxiomAction[] = ['write_file', 'read_file', 'list_directory', 'delete_file'];
+	let rawPlannerAction = String((parsed as any).action || '').toLowerCase();
+	if (rawPlannerAction === 'create_empty_file') {
+		rawPlannerAction = 'write_file'; console.log('OVERRIDE TRIGGERED', isCreateFileWithoutPayload);
+		isCreateFileWithoutPayload = true;
+	}
+	const plannerAction = allowedActions.includes(rawPlannerAction as AxiomAction)
+		? (rawPlannerAction as AxiomAction)
 		: '';
 	const inferredAction = inferActionFromCommand(commandForParsing, lastFilePath);
 
@@ -646,9 +670,12 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	if (inferredAction && plannerAction && inferredAction !== plannerAction) {
 		action = inferredAction;
 	}
+	if (isCreateFileWithoutPayload) {
+		action = 'write_file';
+	}
 
 	const contextRef =
-		/\b(this|that|same|latest|last|previous|current)\b/.test(lowerCommand) || /\b(?:in|into)\s+it\b/.test(lowerCommand);
+		/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) || /\b(?:in|into)\s+it\b/.test(lowerCommand);
 	const explicitPathFromCommand = extractCommandPath(commandForParsing);
 	const fileNameHint = extractFileNameHint(commandForParsing);
 	const rawPath = cleanupPath((parsed as any).path || (parsed as any).filePath || (parsed as any).filename || '');
@@ -676,6 +703,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 			actionHint: 'write_file',
 			append: false,
 			content: '',
+			isCreateFileWithoutPayload,
 			renameIntent: true,
 			lineEdits: [],
 		});
@@ -696,7 +724,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		renameIR.validation = renameValidation;
 		return withFailure(
 			clarifyOnError ? 'clarify' : 'error',
-			'File rename/move is not enabled yet. I can create, read, and update file contents. Ask me to rewrite or edit a file instead.',
+			'File rename/move/extension-change is not enabled yet. I can create, read, and update file contents. Ask me to rewrite or edit a file instead.',
 			baseDir,
 			fullPath,
 			modelConfidence,
@@ -720,8 +748,8 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const commandLineEdits = extractLineEditsFromCommand(commandForParsing);
 	if (commandLineEdits.length) lineEdits = commandLineEdits;
 
-	let content = (parsed as any).content === undefined ? '' : String((parsed as any).content);
-	if (!content && (parsed as any).text !== undefined) content = String((parsed as any).text);
+	let content = isCreateFileWithoutPayload ? '' : ((parsed as any).content === undefined ? '' : String((parsed as any).content));
+	if (!isCreateFileWithoutPayload && !content && (parsed as any).text !== undefined) content = String((parsed as any).text);
 
 	const injectedCurrent = extractInjectedCurrentContent(originalCommand);
 	const spaceLettersIntent = isSpaceAfterEachLetterIntent(lowerCommand);
@@ -811,27 +839,45 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	}
 
 	if (action === 'write_file') {
-		if (!content && /\b(create|make|write)\b/.test(lowerCommand)) {
-			content = extractCreatePayload(commandForParsing);
-		}
-		if (!content && lastUserFileCommand && /\b(create|make|write)\b/.test(lastUserFileCommand.toLowerCase())) {
-			content = extractCreatePayload(lastUserFileCommand);
-		}
-		if (capitalsIntent) {
-			const capitals = inferTopCapitalsContent(commandForParsing);
-			if (capitals) {
-				content = capitals;
-				append = false;
+		const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(lowerCommand);
+		const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
+		isCreateFileWithoutPayload = isCreateFileWithoutPayload || (!hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand));
+
+		if (isCreateFileWithoutPayload) {
+			content = '';
+			append = false;
+			if (parsed && typeof parsed === 'object') {
+				(parsed as any).content = '';
 			}
+		} else {
+			if (!content && /\b(create|make|write)\b/.test(lowerCommand)) {
+				content = extractCreatePayload(commandForParsing);
+			}
+			if (!content && lastUserFileCommand && /\b(create|make|write)\b/.test(lastUserFileCommand.toLowerCase())) {
+				content = extractCreatePayload(lastUserFileCommand);
+			}
+			if (capitalsIntent) {
+				const capitals = inferTopCapitalsContent(commandForParsing);
+				if (capitals) {
+					content = capitals;
+					append = false;
+				}
+			}
+			if (nthRule && content) content = applyNthUpper(content, nthRule);
 		}
-		if (nthRule && content) content = applyNthUpper(content, nthRule);
+
 		content = String(content || '').trimEnd();
 	}
 
 	if (action === 'write_file' && !String(content || '').trim()) {
+		console.log('CHECKING EMPTY', isCreateFileWithoutPayload);
+		const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(lowerCommand);
+		const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
+		isCreateFileWithoutPayload = isCreateFileWithoutPayload || (!hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand));
+
 		if (injectedCurrent && (spacingTransform || nthRule || replaceSpec || lineEdits.length)) {
 			action = 'read_file';
-		} else {
+		} else if (!isCreateFileWithoutPayload) { // ONLY fail if we EXPECTED text and didn't get it
 			return withFailure(
 				clarifyOnError ? 'clarify' : 'error',
 				'I need the text to write. Please include content for the file operation.',
@@ -859,10 +905,14 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const hasSpecificFilePath = !!fullPath && !String(fullPath || '').match(/[\\/]Axiom_Files[\\/]?$/i);
 	const requiredFields =
 		action === 'write_file'
-			? String(content || '').trim().length > 0 && !!fullPath
-			: action === 'read_file' && deterministicTransform
-				? hasSpecificFilePath
-				: !!fullPath;
+			? !!fullPath && (!isCreateFileWithoutPayload ? !!content || lineEdits.length > 0 : true)
+			: action === 'read_file'
+				? !!fullPath
+				: action === 'list_directory'
+					? !!fullPath
+					: action === 'delete_file'
+						? !!fullPath
+						: false;
 	const needsContextBinding = contextRef && !hasExplicitPathInCommand;
 	const contextBindingSucceeded =
 		!needsContextBinding || (lastFilePath && sanitizePath(lastFilePath, action, baseDir, defaultWriteName).toLowerCase() === fullPath.toLowerCase());
@@ -919,6 +969,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		actionHint: action,
 		append,
 		content: action === 'write_file' ? String(content || '') : '',
+		isCreateFileWithoutPayload,
 		renameIntent: false,
 		deterministicTransform: deterministicTransform as any,
 		lineEdits,

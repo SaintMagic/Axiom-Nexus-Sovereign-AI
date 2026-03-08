@@ -73,7 +73,7 @@ export const resolveIntentReferences = (input: ResolveReferencesInput): ResolveR
 	const fileNameHint = String(input.fileNameHint || '').replace(/\\/g, '/');
 
 	const contextRef =
-		/\b(this|that|same|latest|last|previous|current)\b/.test(lower) || /\b(?:in|into)\s+it\b/.test(lower);
+		/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) || /\b(?:in|into)\s+it\b/.test(lower);
 
 	let ref: AxiomIRTargetRef = 'base_dir';
 	let path = baseDir;
@@ -123,8 +123,9 @@ export interface NormalizeIntentInput {
 	actionHint: string;
 	append: boolean;
 	content: string;
+	isCreateFileWithoutPayload?: boolean;
 	renameIntent: boolean;
-	deterministicTransform?: { type: string; [k: string]: unknown };
+	deterministicTransform?: { type: string;[k: string]: unknown };
 	lineEdits?: Array<{ line: number; text: string }>;
 	selectionChoice?: number | null;
 }
@@ -183,9 +184,10 @@ export const normalizeIntent = (input: NormalizeIntentInput): NormalizeIntentRes
 		};
 	}
 
-	if (actionHint === 'write_file') {
+	if (input.actionHint === 'write_file') {
 		const isCreate = /\b(create|make|new)\b/.test(lower) && !/\b(update|edit|modify|replace|rewrite|append)\b/.test(lower);
 		const intent: AxiomIRIntent = isCreate ? 'create' : 'change';
+
 		if (lineEdits.length > 0) {
 			reasons.push('intent: change via line edits');
 			return {
@@ -194,13 +196,18 @@ export const normalizeIntent = (input: NormalizeIntentInput): NormalizeIntentRes
 				reasons,
 			};
 		}
+
+		const params: Record<string, unknown> = { content };
+		if (input.append) params.append = true;
+		if (input.isCreateFileWithoutPayload) params.isCreateFileWithoutPayload = true;
+
 		reasons.push(isCreate ? 'intent: create file' : 'intent: change file content');
 		return {
 			intent,
 			operation: {
 				type: 'write_text',
 				name: input.append ? 'append_text' : 'overwrite_text',
-				params: { content },
+				params,
 			},
 			reasons,
 		};
@@ -299,7 +306,7 @@ export const validateIntentIR = (ir: AxiomIntentIR): AxiomIRValidation => {
 	if (ir.operation.type === 'unsupported') errors.push('unsupported_operation');
 
 	const allowedByTarget: Record<AxiomIRTargetType, Set<string>> = {
-		file: new Set(['read_text', 'write_text', 'transform_text']),
+		file: new Set(['read_text', 'write_text', 'transform_text', 'delete_file']),
 		folder: new Set(['list_directory']),
 		clipboard: new Set(['read_text', 'write_text', 'transform_text']),
 		selected_text: new Set(['read_text', 'write_text', 'transform_text']),
@@ -314,7 +321,8 @@ export const validateIntentIR = (ir: AxiomIntentIR): AxiomIRValidation => {
 
 	if (ir.operation.type === 'write_text') {
 		const content = String((ir.operation.params || {}).content || '');
-		if (!content.trim()) errors.push('missing_required_param:content');
+		const allowEmpty = (ir.operation.params as any)?.isCreateFileWithoutPayload === true;
+		if (!content.trim() && !allowEmpty) errors.push('missing_required_param:content');
 	}
 
 	if (ir.operation.type === 'transform_text') {
