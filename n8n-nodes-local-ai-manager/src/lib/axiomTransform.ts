@@ -1,11 +1,13 @@
 export type TransformPlan =
 	| { type: 'space_letters' }
 	| { type: 'space_words' }
+	| { type: 'words_to_lines' }
 	| { type: 'blank_lines_between_lines' }
 	| { type: 'append_with_blank_lines'; blankLines: number; text: string }
 	| { type: 'uppercase_nth'; n: number }
 	| { type: 'replace_text'; from: string; to: string; caseSensitive?: boolean }
-	| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> };
+	| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> }
+	| { type: 'remove_line'; lines: number[] };
 
 export interface TransformInput {
 	plan: TransformPlan;
@@ -50,6 +52,14 @@ const insertBlankLinesBetweenLines = (txt: string): string => {
 	return lines.join('\n\n');
 };
 
+const wordsToLines = (txt: string): string => {
+	const words = String(txt || '')
+		.split(/\s+/)
+		.map((w) => w.trim())
+		.filter((w) => w.length > 0);
+	return words.join('\n');
+};
+
 const appendWithBlankLines = (txt: string, blankLines: number, appendText: string): string => {
 	const source = String(txt || '').replace(/\r/g, '');
 	const payload = String(appendText || '');
@@ -87,6 +97,18 @@ const applyLineEdits = (existingContent: string, edits: Array<{ line: number; te
 	return lines.join('\n');
 };
 
+const removeLines = (existingContent: string, linesToRemove: number[]): string => {
+	let lines = String(existingContent || '').split(/\r?\n/);
+	if (lines.length === 1 && lines[0] === '') lines = [];
+	const removeSet = new Set(
+		(Array.isArray(linesToRemove) ? linesToRemove : [])
+			.map((n) => Number(n))
+			.filter((n) => Number.isFinite(n) && n >= 1),
+	);
+	if (!removeSet.size) return lines.join('\n');
+	return lines.filter((_, idx) => !removeSet.has(idx + 1)).join('\n');
+};
+
 const escapeRegExp = (str: string): string => String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const applyReplace = (text: string, spec: { from: string; to: string; caseSensitive?: boolean }): string => {
@@ -104,6 +126,10 @@ export function applyDeterministicTransform(input: TransformInput): TransformRes
 
 	if (plan.type === 'space_words') {
 		return { ok: true, content: spaceOutWords(content) };
+	}
+
+	if (plan.type === 'words_to_lines') {
+		return { ok: true, content: wordsToLines(content) };
 	}
 
 	if (plan.type === 'blank_lines_between_lines') {
@@ -142,6 +168,14 @@ export function applyDeterministicTransform(input: TransformInput): TransformRes
 			return { ok: false, message: 'line_edit requires at least one line edit.' };
 		}
 		return { ok: true, content: applyLineEdits(content, edits) };
+	}
+
+	if (plan.type === 'remove_line') {
+		const lines = Array.isArray(plan.lines) ? plan.lines : [];
+		if (!lines.length) {
+			return { ok: false, message: 'remove_line requires at least one line index.' };
+		}
+		return { ok: true, content: removeLines(content, lines) };
 	}
 
 	return { ok: false, message: `Unsupported transform type: ${(plan as any).type || 'unknown'}` };

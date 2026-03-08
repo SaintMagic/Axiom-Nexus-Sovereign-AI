@@ -1,0 +1,25 @@
+{
+  "name": "words_to_lines",
+  "intent": "transform_text",
+  "description": "Place each word on a separate line.",
+  "requires_existing_file": true,
+  "inputs": {
+    "target_file": "string"
+  },
+  "required_inputs": [
+    "target_file"
+  ],
+  "deterministic": true,
+  "risk": "low",
+  "examples": [
+    "put each word in separate line",
+    "one word per line"
+  ],
+  "forbidden_cases": [
+    "target file unresolved"
+  ],
+  "executor": "axiomTransform.wordsToLines",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

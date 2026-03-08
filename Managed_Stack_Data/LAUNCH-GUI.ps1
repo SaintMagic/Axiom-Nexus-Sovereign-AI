@@ -2,6 +2,18 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 Add-Type -AssemblyName System.Drawing
 
+# Launcher must run elevated to reliably stop stale node/n8n processes.
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Axiom Launch Center must run as Administrator for reliable restart/port cleanup. Please re-open using 'Run as administrator'.",
+        "Axiom Nexus",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    ) | Out-Null
+    exit
+}
+
 # --- SINGLE INSTANCE GUARD ---
 $mutexCreated = $false
 $script:appMutex = New-Object System.Threading.Mutex($true, "Global\AxiomLaunchCenterMutex", [ref]$mutexCreated)
@@ -22,6 +34,7 @@ $script:hubLaunched = $false
 $script:startInProgress = $false
 $script:startDeadline = $null
 $script:hubProcessId = $null
+$script:n8nProcessId = $null
 $script:hubProfileDir = Join-Path $env:TEMP "AxiomHubProfile"
 $script:routerWorkflowId = "dTzRbVa8bRBZTZ6O"
 
@@ -69,6 +82,74 @@ function Test-N8nReady {
     catch {
         return $false
     }
+}
+
+function Stop-ProcessTreeById {
+    param(
+        [int]$ProcessId,
+        [System.Windows.Forms.TextBox]$OutputBox,
+        [string]$Label = "process"
+    )
+
+    if ($ProcessId -le 0) { return }
+    if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) { return }
+
+    $OutputBox.AppendText("Closing $Label (PID $ProcessId)...`r`n")
+    $taskkillOutput = & taskkill /F /PID $ProcessId /T 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $OutputBox.AppendText("WARNING: Could not stop $Label PID $ProcessId (exit $LASTEXITCODE).`r`n")
+        if ($taskkillOutput) {
+            $OutputBox.AppendText($taskkillOutput.Trim() + "`r`n")
+        }
+    }
+}
+
+function Stop-ListenersOnPorts {
+    param(
+        [int[]]$Ports,
+        [System.Windows.Forms.TextBox]$OutputBox
+    )
+
+    $pids = New-Object System.Collections.Generic.HashSet[int]
+    foreach ($port in $Ports) {
+        try {
+            $listeners = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+            foreach ($c in $listeners) {
+                if ($c -and $c.OwningProcess -and $c.OwningProcess -gt 0) {
+                    [void]$pids.Add([int]$c.OwningProcess)
+                }
+            }
+        }
+        catch { }
+    }
+
+    foreach ($pid in $pids) {
+        Stop-ProcessTreeById -ProcessId $pid -OutputBox $OutputBox -Label "port listener"
+    }
+}
+
+function Wait-PortsReleased {
+    param(
+        [int[]]$Ports,
+        [System.Windows.Forms.TextBox]$OutputBox,
+        [int]$TimeoutSeconds = 12
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $busy = $false
+        foreach ($port in $Ports) {
+            if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) {
+                $busy = $true
+                break
+            }
+        }
+        if (-not $busy) { return $true }
+        Start-Sleep -Milliseconds 400
+    }
+
+    $OutputBox.AppendText("WARNING: Ports still busy after stop timeout: $($Ports -join ', ').`r`n")
+    return $false
 }
 
 function Ensure-OllamaRunning {
@@ -122,6 +203,13 @@ function Stop-AxiomStack {
         [switch]$StopOllama
     )
 
+    if ($script:n8nProcessId) {
+        Stop-ProcessTreeById -ProcessId $script:n8nProcessId -OutputBox $OutputBox -Label "n8n runtime"
+        $script:n8nProcessId = $null
+    }
+
+    Stop-ListenersOnPorts -Ports @(5678, 5679) -OutputBox $OutputBox
+
     $targets = @("node", "n8n")
     if ($StopOllama) { $targets += @("ollama", "ollama app") }
 
@@ -137,6 +225,132 @@ function Stop-AxiomStack {
             }
         }
     }
+
+    [void](Wait-PortsReleased -Ports @(5678, 5679) -OutputBox $OutputBox)
+}
+
+function Sync-CustomNodePackage {
+    param(
+        [System.Windows.Forms.TextBox]$OutputBox
+    )
+
+    $tarball = $null
+    $sourcePkgDir = Join-Path (Split-Path $PSScriptRoot -Parent) "n8n-nodes-local-ai-manager"
+    $sourceBuildAttempted = $false
+    $sourceBuildFailed = $false
+
+    if (Test-Path (Join-Path $sourcePkgDir "package.json")) {
+        $sourceBuildAttempted = $true
+        $OutputBox.AppendText("Building local custom node package from source...`r`n")
+        Push-Location $sourcePkgDir
+        try {
+            $buildOut = & npm run build 2>&1 | Out-String
+            if ($buildOut) { $OutputBox.AppendText($buildOut.Trim() + "`r`n") }
+            if ($LASTEXITCODE -ne 0) {
+                $OutputBox.AppendText("ERROR: npm run build failed (exit $LASTEXITCODE).`r`n")
+                $sourceBuildFailed = $true
+            } else {
+                $packOut = & npm pack 2>&1 | Out-String
+                if ($packOut) { $OutputBox.AppendText($packOut.Trim() + "`r`n") }
+                if ($LASTEXITCODE -eq 0) {
+                    $builtTarball = Get-ChildItem -Path $sourcePkgDir -Filter "n8n-nodes-local-ai-manager-*.tgz" -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending |
+                        Select-Object -First 1
+                    if ($builtTarball) {
+                        $copiedTarball = Join-Path $PSScriptRoot $builtTarball.Name
+                        Copy-Item -Path $builtTarball.FullName -Destination $copiedTarball -Force
+                        $tarball = $copiedTarball
+                        $OutputBox.AppendText("Updated package tarball: $($builtTarball.Name)`r`n")
+                    }
+                } else {
+                    $OutputBox.AppendText("ERROR: npm pack failed (exit $LASTEXITCODE).`r`n")
+                    $sourceBuildFailed = $true
+                }
+            }
+        }
+        catch {
+            $OutputBox.AppendText("ERROR: Source package build failed: $($_.Exception.Message)`r`n")
+            $sourceBuildFailed = $true
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    if ($sourceBuildAttempted -and $sourceBuildFailed) {
+        $OutputBox.AppendText("ERROR: Aborting startup to avoid loading stale custom node package.`r`n")
+        return $false
+    }
+
+    if (-not $tarball) {
+        $tarballs = Get-ChildItem -Path $PSScriptRoot -Filter "n8n-nodes-local-ai-manager-*.tgz" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+        if ($tarballs -and $tarballs.Count -gt 0) {
+            $tarball = $tarballs[0].FullName
+        }
+    }
+
+    if (-not $tarball) {
+        $OutputBox.AppendText("WARNING: No custom node package tarball found in Managed_Stack_Data.`r`n")
+        return $false
+    }
+
+    $nodesDir = Join-Path $env:USERPROFILE ".n8n\nodes"
+
+    try {
+        New-Item -Path $nodesDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+    }
+    catch {
+        $OutputBox.AppendText("ERROR: Could not create n8n nodes directory: $($_.Exception.Message)`r`n")
+        return $false
+    }
+
+    $pkgJsonPath = Join-Path $nodesDir "package.json"
+    if (-not (Test-Path $pkgJsonPath)) {
+        $bootstrap = @{
+            name = "installed-nodes"
+            private = $true
+            dependencies = @{}
+        } | ConvertTo-Json -Depth 6
+        Set-Content -Path $pkgJsonPath -Value $bootstrap -Encoding UTF8
+    }
+
+    $OutputBox.AppendText("Syncing custom node package: $([System.IO.Path]::GetFileName($tarball))`r`n")
+    Push-Location $nodesDir
+    try {
+        $installOut = & npm install --force "file:$tarball" 2>&1 | Out-String
+        if ($installOut) { $OutputBox.AppendText($installOut.Trim() + "`r`n") }
+        if ($LASTEXITCODE -ne 0) {
+            $OutputBox.AppendText("ERROR: npm install failed with exit code $LASTEXITCODE.`r`n")
+            return $false
+        }
+    }
+    catch {
+        $OutputBox.AppendText("ERROR: Failed to sync custom node package: $($_.Exception.Message)`r`n")
+        return $false
+    }
+    finally {
+        Pop-Location
+    }
+
+    $parserPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\dist\lib\axiomParser.js"
+    if (-not (Test-Path $parserPath)) {
+        $OutputBox.AppendText("ERROR: Custom parser node was not installed correctly (axiomParser.js missing).`r`n")
+        return $false
+    }
+
+    try {
+        $pkgPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\package.json"
+        $pkgVersion = if (Test-Path $pkgPath) { (Get-Content $pkgPath -Raw | ConvertFrom-Json).version } else { "unknown" }
+        $parserHash = (Get-FileHash -Path $parserPath -Algorithm SHA256).Hash.Substring(0, 12)
+        $OutputBox.AppendText("Installed custom node version: $pkgVersion (parser $parserHash)`r`n")
+    }
+    catch {
+        $OutputBox.AppendText("Warning: Could not compute parser fingerprint: $($_.Exception.Message)`r`n")
+    }
+
+    $OutputBox.AppendText("Custom node package synced successfully.`r`n")
+    return $true
 }
 
 function Close-HubWindow {
@@ -212,6 +426,28 @@ function Start-AxiomStack {
         }
     }
 
+    $OutputBox.AppendText("--- Syncing Local Custom Nodes ---`r`n")
+    if (-not (Sync-CustomNodePackage -OutputBox $OutputBox)) {
+        $StatusLabel.Text = "Custom node sync failed."
+        $StatusLabel.ForeColor = [System.Drawing.Color]::Red
+        $script:startInProgress = $false
+        return
+    }
+
+    $routerPath = Join-Path $PSScriptRoot "Axiom-Master-Router.json"
+    if (Test-Path $routerPath) {
+        $OutputBox.AppendText("--- Importing Router Workflow ---`r`n")
+        try {
+            $importOutput = & n8n import:workflow --input="$routerPath" 2>&1 | Out-String
+            if ($importOutput) {
+                $OutputBox.AppendText($importOutput.Trim() + "`r`n")
+            }
+        }
+        catch {
+            $OutputBox.AppendText("Warning: Could not import router workflow automatically: $($_.Exception.Message)`r`n")
+        }
+    }
+
     $OutputBox.AppendText("--- Publishing Router Workflow ---`r`n")
     try {
         $publishOutput = & n8n publish:workflow --id=$script:routerWorkflowId 2>&1 | Out-String
@@ -231,8 +467,13 @@ function Start-AxiomStack {
     $env:N8N_DIAGNOSTICS_ENABLED = "false"
     $env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
     $env:N8N_RESTRICT_FILE_ACCESS_TO = "C:\Axiom_Files;~/.n8n-files"
+    $env:NODE_FUNCTION_ALLOW_BUILTIN = "fs,path"
 
-    Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$script:logFile`" 2>&1" -WindowStyle Hidden
+    $n8nProc = Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$script:logFile`" 2>&1" -WindowStyle Hidden -PassThru
+    if ($n8nProc) {
+        $script:n8nProcessId = $n8nProc.Id
+        $OutputBox.AppendText("Started n8n host process PID $($script:n8nProcessId).`r`n")
+    }
     $StatusLabel.Text = "Starting n8n..."
     $StatusLabel.ForeColor = [System.Drawing.Color]::Orange
     $UiTimer.Start()

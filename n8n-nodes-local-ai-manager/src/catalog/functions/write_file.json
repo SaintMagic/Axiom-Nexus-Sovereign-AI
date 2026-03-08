@@ -1,0 +1,27 @@
+{
+  "name": "write_file",
+  "intent": "file_edit",
+  "description": "Create or overwrite file text content.",
+  "requires_existing_file": false,
+  "inputs": {
+    "target_file": "string",
+    "content": "string",
+    "write_mode": "overwrite|append"
+  },
+  "required_inputs": [
+    "target_file"
+  ],
+  "deterministic": true,
+  "risk": "medium",
+  "examples": [
+    "create file with text hello",
+    "append this text to report.txt"
+  ],
+  "forbidden_cases": [
+    "target file unresolved on non-create command"
+  ],
+  "executor": "filesystem.write_file",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

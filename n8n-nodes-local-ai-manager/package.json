@@ -17,7 +17,7 @@
     },
     "main": "dist/nodes/LocalAiManager/LocalAiManager.node.js",
     "scripts": {
-        "build": "tsc && powershell -Command \"$destinations = @('dist/nodes/LocalAiManager','dist/nodes/AxiomParser','dist/nodes/AxiomTransform'); foreach ($d in $destinations) { if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; Copy-Item -Path 'src/nodes/LocalAiManager/robot.svg' -Destination (Join-Path $d 'robot.svg') -Force }\""
+        "build": "tsc && powershell -Command \"$destinations = @('dist/nodes/LocalAiManager','dist/nodes/AxiomParser','dist/nodes/AxiomTransform'); foreach ($d in $destinations) { if (!(Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }; Copy-Item -Path 'src/nodes/LocalAiManager/robot.svg' -Destination (Join-Path $d 'robot.svg') -Force }; if (Test-Path 'src/catalog') { if (!(Test-Path 'dist/catalog')) { New-Item -ItemType Directory -Path 'dist/catalog' -Force | Out-Null }; Copy-Item -Path 'src/catalog/*' -Destination 'dist/catalog' -Recurse -Force }\""
     },
     "files": [
         "dist"

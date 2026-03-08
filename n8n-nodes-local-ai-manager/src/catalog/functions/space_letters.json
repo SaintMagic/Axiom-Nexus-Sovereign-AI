@@ -1,0 +1,25 @@
+{
+  "name": "space_letters",
+  "intent": "transform_text",
+  "description": "Insert spaces between every character.",
+  "requires_existing_file": true,
+  "inputs": {
+    "target_file": "string"
+  },
+  "required_inputs": [
+    "target_file"
+  ],
+  "deterministic": true,
+  "risk": "low",
+  "examples": [
+    "add spaces after each letter",
+    "space out this text"
+  ],
+  "forbidden_cases": [
+    "target file unresolved"
+  ],
+  "executor": "axiomTransform.spaceLetters",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

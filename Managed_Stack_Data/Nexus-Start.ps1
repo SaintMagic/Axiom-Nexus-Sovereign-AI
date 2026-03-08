@@ -5,18 +5,208 @@
 
 Add-Type -AssemblyName System.Windows.Forms
 Set-Location -Path $PSScriptRoot
+$script:n8nProcessId = $null
 
-# 1. Force Cleanup of Ghost Processes
-# n8n v2 can leave "zombie" node processes that hold the port but don't serve the UI.
-Write-Host "Clearing legacy state..." -ForegroundColor Gray
-Get-Process -Name "node", "n8n" -ErrorAction SilentlyContinue | Where-Object { 
-    $p = $_
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Axiom Nexus launcher must run as Administrator for reliable restart/port cleanup. Please re-open using 'Run as administrator'.",
+        "Axiom Nexus",
+        [System.Windows.Forms.MessageBoxButtons]::OK,
+        [System.Windows.Forms.MessageBoxIcon]::Warning
+    ) | Out-Null
+    exit
+}
+
+function Test-N8nReady {
     try {
-        $c = Get-NetTCPConnection -LocalPort 5678 -OwningProcess $p.Id -ErrorAction SilentlyContinue
-        $null -ne $c
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:5678/healthz" -TimeoutSec 2 -ErrorAction Stop
+        return $resp.StatusCode -eq 200
     }
-    catch { $false }
-} | Stop-Process -Force -ErrorAction SilentlyContinue
+    catch {
+        return $false
+    }
+}
+
+function Stop-ProcessTreeById {
+    param(
+        [int]$ProcessId
+    )
+
+    if ($ProcessId -le 0) { return }
+    if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) { return }
+
+    & taskkill /F /PID $ProcessId /T 2>&1 | Out-Null
+}
+
+function Stop-ListenersOnPorts {
+    param(
+        [int[]]$Ports
+    )
+
+    $pids = New-Object System.Collections.Generic.HashSet[int]
+    foreach ($port in $Ports) {
+        try {
+            $listeners = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+            foreach ($c in $listeners) {
+                if ($c -and $c.OwningProcess -and $c.OwningProcess -gt 0) {
+                    [void]$pids.Add([int]$c.OwningProcess)
+                }
+            }
+        }
+        catch { }
+    }
+
+    foreach ($pid in $pids) {
+        Stop-ProcessTreeById -ProcessId $pid
+    }
+}
+
+function Wait-PortsReleased {
+    param(
+        [int[]]$Ports,
+        [int]$TimeoutSeconds = 12
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        $busy = $false
+        foreach ($port in $Ports) {
+            if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) {
+                $busy = $true
+                break
+            }
+        }
+        if (-not $busy) { return $true }
+        Start-Sleep -Milliseconds 400
+    }
+
+    return $false
+}
+
+function Stop-AxiomStack {
+    if ($script:n8nProcessId) {
+        Stop-ProcessTreeById -ProcessId $script:n8nProcessId
+        $script:n8nProcessId = $null
+    }
+
+    Stop-ListenersOnPorts -Ports @(5678, 5679)
+    Get-Process -Name "node", "n8n" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    [void](Wait-PortsReleased -Ports @(5678, 5679))
+}
+
+function Sync-CustomNodePackage {
+    param(
+        [string]$RootDir
+    )
+
+    $tarball = $null
+    $sourcePkgDir = Join-Path (Split-Path $RootDir -Parent) "n8n-nodes-local-ai-manager"
+    $sourceBuildAttempted = $false
+    $sourceBuildFailed = $false
+    if (Test-Path (Join-Path $sourcePkgDir "package.json")) {
+        $sourceBuildAttempted = $true
+        Write-Host "Building local custom node package from source..." -ForegroundColor Gray
+        Push-Location $sourcePkgDir
+        try {
+            & npm run build | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                & npm pack | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $builtTarball = Get-ChildItem -Path $sourcePkgDir -Filter "n8n-nodes-local-ai-manager-*.tgz" -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending |
+                        Select-Object -First 1
+                    if ($builtTarball) {
+                        $copiedTarball = Join-Path $RootDir $builtTarball.Name
+                        Copy-Item -Path $builtTarball.FullName -Destination $copiedTarball -Force
+                        $tarball = $copiedTarball
+                        Write-Host "Updated package tarball: $($builtTarball.Name)" -ForegroundColor Gray
+                    }
+                }
+                else {
+                    Write-Host "ERROR: npm pack failed with exit code $LASTEXITCODE" -ForegroundColor Red
+                    $sourceBuildFailed = $true
+                }
+            }
+            else {
+                Write-Host "ERROR: npm run build failed with exit code $LASTEXITCODE" -ForegroundColor Red
+                $sourceBuildFailed = $true
+            }
+        }
+        catch {
+            Write-Host "ERROR: Source package build failed: $($_.Exception.Message)" -ForegroundColor Red
+            $sourceBuildFailed = $true
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    if ($sourceBuildAttempted -and $sourceBuildFailed) {
+        Write-Host "ERROR: Aborting startup to avoid loading stale custom node package." -ForegroundColor Red
+        return $false
+    }
+
+    if (-not $tarball) {
+        $tarballs = Get-ChildItem -Path $RootDir -Filter "n8n-nodes-local-ai-manager-*.tgz" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending
+        if ($tarballs -and $tarballs.Count -gt 0) {
+            $tarball = $tarballs[0].FullName
+        }
+    }
+    if (-not $tarball) {
+        Write-Host "WARNING: No custom node package tarball found in $RootDir" -ForegroundColor Yellow
+        return $false
+    }
+
+    $nodesDir = Join-Path $env:USERPROFILE ".n8n\nodes"
+    New-Item -Path $nodesDir -ItemType Directory -Force | Out-Null
+
+    $pkgJsonPath = Join-Path $nodesDir "package.json"
+    if (-not (Test-Path $pkgJsonPath)) {
+        $bootstrap = @{
+            name = "installed-nodes"
+            private = $true
+            dependencies = @{}
+        } | ConvertTo-Json -Depth 6
+        Set-Content -Path $pkgJsonPath -Value $bootstrap -Encoding UTF8
+    }
+
+    Write-Host "Syncing custom node package: $([System.IO.Path]::GetFileName($tarball))" -ForegroundColor Gray
+    Push-Location $nodesDir
+    try {
+        & npm install --force "file:$tarball" | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: npm install failed with exit code $LASTEXITCODE" -ForegroundColor Red
+            return $false
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    $parserPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\dist\lib\axiomParser.js"
+    if (-not (Test-Path $parserPath)) {
+        Write-Host "ERROR: axiomParser.js missing after package sync." -ForegroundColor Red
+        return $false
+    }
+
+    try {
+        $pkgPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\package.json"
+        $pkgVersion = if (Test-Path $pkgPath) { (Get-Content $pkgPath -Raw | ConvertFrom-Json).version } else { "unknown" }
+        $parserHash = (Get-FileHash -Path $parserPath -Algorithm SHA256).Hash.Substring(0, 12)
+        Write-Host "Installed custom node version: $pkgVersion (parser $parserHash)" -ForegroundColor Gray
+    }
+    catch {
+        Write-Host "WARNING: Could not compute parser fingerprint: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+
+    return $true
+}
+
+# 1. Force cleanup before every start
+Write-Host "Clearing legacy state..." -ForegroundColor Gray
+Stop-AxiomStack
 
 # 2. Start Engine
 $env:N8N_PORT = 5678
@@ -26,9 +216,27 @@ $env:N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS = "false"
 # We avoid setting N8N_HOST/PROTOCOL to allow n8n to auto-detect the UI routes correctly
 $env:N8N_DIAGNOSTICS_ENABLED = "false"
 $env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
+$env:NODE_FUNCTION_ALLOW_BUILTIN = "fs,path"
+
+if (-not (Sync-CustomNodePackage -RootDir $PSScriptRoot)) {
+    [System.Windows.Forms.MessageBox]::Show("Custom node sync failed. Engine startup aborted to prevent stale runtime.", "Axiom Nexus", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    exit
+}
+
+if (Test-Path (Join-Path $PSScriptRoot "Axiom-Master-Router.json")) {
+    Write-Host "Importing latest Axiom Master Router..." -ForegroundColor Gray
+    & n8n import:workflow --input=(Join-Path $PSScriptRoot "Axiom-Master-Router.json") | Out-Null
+}
+Write-Host "Publishing router workflow..." -ForegroundColor Gray
+& n8n publish:workflow --id=dTzRbVa8bRBZTZ6O | Out-Null
 
 Write-Host "Initializing Axiom Nexus Engine..." -ForegroundColor Cyan
-Start-Process cmd.exe -ArgumentList "/c n8n start" -WindowStyle Hidden
+$bootLog = Join-Path $env:TEMP ("axiom_boot_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss_fff"))
+$n8nProc = Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$bootLog`" 2>&1" -WindowStyle Hidden -PassThru
+if ($n8nProc) {
+    $script:n8nProcessId = $n8nProc.Id
+    Write-Host "Started n8n host process PID $($script:n8nProcessId)" -ForegroundColor Gray
+}
 
 # 3. Verify Health (Not just the port)
 $maxRetries = 40
@@ -37,8 +245,11 @@ $isStarted = $false
 $healthUrl = "http://localhost:5678/healthz"
 
 while (-not $isStarted -and $retryCount -lt $maxRetries) {
+    if ($script:n8nProcessId -and -not (Get-Process -Id $script:n8nProcessId -ErrorAction SilentlyContinue)) {
+        break
+    }
     try {
-        $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri $healthUrl -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
         if ($response.StatusCode -eq 200) {
             $isStarted = $true
         }
@@ -67,7 +278,8 @@ if ($isStarted) {
     Start-Process "http://localhost:5678"
 }
 else {
-    [System.Windows.Forms.MessageBox]::Show("The Axiom Nexus engine failed to serve the dashboard within 40 seconds. Check if another app is using port 5678.", "Startup Timeout", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
+    Stop-AxiomStack
+    [System.Windows.Forms.MessageBox]::Show("The Axiom Nexus engine failed to become healthy within 40 seconds. Boot log: $bootLog", "Startup Timeout", [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Error)
 }
 
 exit

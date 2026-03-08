@@ -16,7 +16,15 @@ export interface AxiomIRTarget {
 }
 
 export interface AxiomIROperation {
-	type: 'read_text' | 'write_text' | 'list_directory' | 'transform_text' | 'unsupported' | 'clarify';
+	type:
+		| 'read_text'
+		| 'write_text'
+		| 'list_directory'
+		| 'transform_text'
+		| 'delete_file'
+		| 'move_file'
+		| 'unsupported'
+		| 'clarify';
 	name: string;
 	params: Record<string, unknown>;
 }
@@ -71,9 +79,21 @@ export const resolveIntentReferences = (input: ResolveReferencesInput): ResolveR
 	const explicitPathFromCommand = String(input.explicitPathFromCommand || '').replace(/\\/g, '/');
 	const rawPath = String(input.rawPath || '').replace(/\\/g, '/');
 	const fileNameHint = String(input.fileNameHint || '').replace(/\\/g, '/');
+	const commandFileMentionQuoted =
+		originalCommand.match(/["'`]([^"'`]+\.(?:txt|text|md|json|csv|log))["'`]/i)?.[1] || '';
+	const commandFileMentionBare =
+		originalCommand.match(/(?:^|\s)([A-Za-z0-9_.-]+\.(?:txt|text|md|json|csv|log))(?=$|\s|[.,;:!?])/i)?.[1] || '';
+	const commandFileMention = String(commandFileMentionQuoted || commandFileMentionBare || '')
+		.replace(/^["'`]+|["'`]+$/g, '')
+		.trim();
 
+	const namingItPhrase = /\b(?:name|named|call(?:ed)?)\s+it\b/.test(lower);
+	const createWithExplicitName =
+		/\b(?:create|make|build|generate|new)\b/.test(lower) &&
+		(/\b(?:name\s+it|named|called|filename|file\s+name)\b/.test(lower) || !!fileNameHint);
 	const contextRef =
-		/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) || /\b(?:in|into)\s+it\b/.test(lower);
+		(/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) || /\b(?:in|into)\s+it\b/.test(lower)) &&
+		!(namingItPhrase && createWithExplicitName);
 
 	let ref: AxiomIRTargetRef = 'base_dir';
 	let path = baseDir;
@@ -87,11 +107,15 @@ export const resolveIntentReferences = (input: ResolveReferencesInput): ResolveR
 		ref = 'planner_path';
 		path = rawPath;
 		reasons.push('reference: planner path');
+	} else if (commandFileMention) {
+		ref = 'explicit_path';
+		path = `${baseDir}/${commandFileMention}`;
+		reasons.push('reference: filename mention in user command');
 	} else if (contextRef && lastFilePath) {
 		ref = 'current_file';
 		path = lastFilePath;
 		reasons.push('reference: context-bound previous file');
-	} else if (actionHint === 'write_file' && fileNameHint) {
+	} else if ((actionHint === 'write_file' || actionHint === 'read_file' || actionHint === 'delete_file' || actionHint === 'move_file') && fileNameHint) {
 		ref = 'default_file';
 		path = `${baseDir}/${fileNameHint}`;
 		reasons.push('reference: filename hint in command');
@@ -104,7 +128,7 @@ export const resolveIntentReferences = (input: ResolveReferencesInput): ResolveR
 	const isFolder = actionHint === 'list_directory' || /[\\/]$/.test(path) || path.toLowerCase() === baseDir.toLowerCase();
 	const targetType: AxiomIRTargetType = isFolder ? 'folder' : 'file';
 	const hasSpecificPath = !!path && !/[\\/]Axiom_Files[\\/]?$/i.test(path);
-	const unresolved = (actionHint === 'read_file' || actionHint === 'write_file') && !hasSpecificPath;
+	const unresolved = (actionHint === 'read_file' || actionHint === 'write_file' || actionHint === 'delete_file' || actionHint === 'move_file') && !hasSpecificPath;
 
 	return {
 		target: {
@@ -124,6 +148,7 @@ export interface NormalizeIntentInput {
 	append: boolean;
 	content: string;
 	isCreateFileWithoutPayload?: boolean;
+	moveTargetPath?: string;
 	renameIntent: boolean;
 	deterministicTransform?: { type: string;[k: string]: unknown };
 	lineEdits?: Array<{ line: number; text: string }>;
@@ -180,6 +205,30 @@ export const normalizeIntent = (input: NormalizeIntentInput): NormalizeIntentRes
 		return {
 			intent: 'get',
 			operation: { type: 'read_text', name: 'read_text', params: {} },
+			reasons,
+		};
+	}
+
+	if (actionHint === 'delete_file') {
+		reasons.push('intent: delete file');
+		return {
+			intent: 'change',
+			operation: { type: 'delete_file', name: 'delete_file', params: {} },
+			reasons,
+		};
+	}
+
+	if (actionHint === 'move_file') {
+		reasons.push('intent: move/rename file');
+		return {
+			intent: 'move',
+			operation: {
+				type: 'move_file',
+				name: 'move_file',
+				params: {
+					toPath: String(input.moveTargetPath || ''),
+				},
+			},
 			reasons,
 		};
 	}
@@ -253,7 +302,12 @@ export const buildIntentIR = (input: BuildIRInput): AxiomIntentIR => {
 		risk = 'high';
 		mode = 'plan';
 		reasons.push('external target');
-	} else if (input.operation.type === 'transform_text' || input.operation.type === 'write_text') {
+	} else if (
+		input.operation.type === 'transform_text' ||
+		input.operation.type === 'write_text' ||
+		input.operation.type === 'delete_file' ||
+		input.operation.type === 'move_file'
+	) {
 		risk = 'medium';
 		reasons.push('content-changing operation');
 	}
@@ -275,6 +329,10 @@ export const buildIntentIR = (input: BuildIRInput): AxiomIntentIR => {
 					? ['write_file']
 					: input.operation.type === 'transform_text'
 						? ['read_file', 'transform_text', 'write_file']
+						: input.operation.type === 'delete_file'
+							? ['delete_file']
+							: input.operation.type === 'move_file'
+								? ['move_file']
 						: [];
 
 	return {
@@ -306,7 +364,7 @@ export const validateIntentIR = (ir: AxiomIntentIR): AxiomIRValidation => {
 	if (ir.operation.type === 'unsupported') errors.push('unsupported_operation');
 
 	const allowedByTarget: Record<AxiomIRTargetType, Set<string>> = {
-		file: new Set(['read_text', 'write_text', 'transform_text', 'delete_file']),
+		file: new Set(['read_text', 'write_text', 'transform_text', 'delete_file', 'move_file']),
 		folder: new Set(['list_directory']),
 		clipboard: new Set(['read_text', 'write_text', 'transform_text']),
 		selected_text: new Set(['read_text', 'write_text', 'transform_text']),
@@ -332,6 +390,11 @@ export const validateIntentIR = (ir: AxiomIntentIR): AxiomIRValidation => {
 			const edits = (ir.operation.params || {}).lineEdits as Array<unknown>;
 			if (!Array.isArray(edits) || edits.length === 0) errors.push('missing_required_param:lineEdits');
 		}
+	}
+
+	if (ir.operation.type === 'move_file') {
+		const toPath = String((ir.operation.params || {}).toPath || '');
+		if (!toPath.trim()) errors.push('missing_required_param:toPath');
 	}
 
 	if (ir.execution.mode === 'direct' && ir.execution.risk === 'high') {

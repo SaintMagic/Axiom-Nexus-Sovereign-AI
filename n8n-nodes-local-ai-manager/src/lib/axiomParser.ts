@@ -1,4 +1,4 @@
-export type AxiomAction = 'write_file' | 'read_file' | 'list_directory' | 'error' | 'clarify' | 'delete_file';
+export type AxiomAction = 'write_file' | 'read_file' | 'list_directory' | 'delete_file' | 'move_file' | 'error' | 'clarify';
 
 import {
 	AxiomIRExecutionMode,
@@ -9,6 +9,9 @@ import {
 	resolveIntentReferences,
 	validateIntentIR,
 } from './axiomIntentIR';
+import { getFunctionAvailability } from './axiomCatalog';
+
+declare const __dirname: string;
 
 export interface AxiomParseInput {
 	baseDir: string;
@@ -27,8 +30,10 @@ export interface AxiomParseOutput {
 	content: string;
 	fullPath: string;
 	path: string;
+	destinationPath?: string;
 	isExternal: boolean;
 	append: boolean;
+	allowEmptyWrite?: boolean;
 	confidence: number;
 	modelConfidence: number | null;
 	parserTier: string;
@@ -37,11 +42,13 @@ export interface AxiomParseOutput {
 	postReadTransform?:
 	| { type: 'space_letters' }
 	| { type: 'space_words' }
+	| { type: 'words_to_lines' }
 	| { type: 'blank_lines_between_lines' }
 	| { type: 'append_with_blank_lines'; blankLines: number; text: string }
 	| { type: 'uppercase_nth'; n: number }
 	| { type: 'replace_text'; from: string; to: string; caseSensitive?: boolean }
-	| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> };
+	| { type: 'line_edit'; lineEdits: Array<{ line: number; text: string }> }
+	| { type: 'remove_line'; lines: number[] };
 	hasSpecificFilePath?: boolean;
 	intentIR?: AxiomIntentIR;
 	routeMode?: AxiomIRExecutionMode;
@@ -295,7 +302,8 @@ const extractLineEditsFromCommand = (text: string): Array<{ line: number; text: 
 	const src = String(text || '');
 	const patterns = [
 		/\bon\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\s+(?:write|put|add|append|insert|set|make|change|update|udpate|updte|updat|udate)\s+(.+?)(?=$|\s*(?:and\s+)?on\s+(?:the\s+)?(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line)/gi,
-		/(?:add|put|set|write|change|make|update|udpate|updte|updat|udate)\s+(.+?)\s+(?:on|to|at)\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line/gi,
+		/(?:add|put|set|write|change|make|update|udpate|updte|updat|udate|insert|append)\s+(.+?)\s+(?:on|to|at|in)\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line/gi,
+		/\band\s+(.+?)\s+(?:on|to|at|in)\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line/gi,
 	];
 
 	for (const re of patterns) {
@@ -318,6 +326,64 @@ const extractLineEditsFromCommand = (text: string): Array<{ line: number; text: 
 	return [...byLine.entries()]
 		.sort((a, b) => a[0] - b[0])
 		.map(([line, value]) => ({ line, text: value }));
+};
+
+const extractRemoveLineSpec = (text: string): { lines: number[] } | null => {
+	const src = String(text || '');
+	const out: number[] = [];
+	const re =
+		/\b(?:remove|delete|clear)\s+(?:the\s+)?(\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/gi;
+	for (const m of src.matchAll(re)) {
+		const line = parseLineNumber(m[1]);
+		if (line) out.push(line);
+	}
+	const unique = [...new Set(out)].sort((a, b) => a - b);
+	return unique.length ? { lines: unique } : null;
+};
+
+const getDirName = (p: string): string => {
+	const norm = cleanupPath(p);
+	const idx = norm.lastIndexOf('/');
+	if (idx <= 0) return '';
+	return norm.slice(0, idx);
+};
+
+const getBaseNameNoExt = (p: string): string => {
+	const norm = cleanupPath(p);
+	const name = norm.split('/').pop() || '';
+	const dot = name.lastIndexOf('.');
+	if (dot <= 0) return name;
+	return name.slice(0, dot);
+};
+
+const extractMoveTargetHint = (command: string, lastPath: string, baseDir: string, defaultWriteName: string): string => {
+	const src = String(command || '').trim();
+	const lower = src.toLowerCase();
+	const last = cleanupPath(lastPath || '');
+
+	const ext =
+		lower.match(/\bextension\s+to\s+(\.[a-z0-9]{1,10})\b/i)?.[1] ||
+		lower.match(/\bto\s+(\.[a-z0-9]{1,10})\b/i)?.[1] ||
+		'';
+	if (ext && last) {
+		const dir = getDirName(last) || cleanupPath(baseDir);
+		const stem = getBaseNameNoExt(last) || sanitizeName(defaultWriteName).replace(/\.[A-Za-z0-9]+$/, '');
+		return `${dir}/${stem}${ext.toLowerCase()}`;
+	}
+
+	const mRename = src.match(/\b(?:rename|renmae)\b[\s\S]*?\bto\s+([^\n\r]+)$/i);
+	const mMove = src.match(/\bmove\b[\s\S]*?\bto\s+([^\n\r]+)$/i);
+	const rawTarget = cleanupPath((mRename?.[1] || mMove?.[1] || '').replace(/^['"]|['"]$/g, ''));
+	if (!rawTarget) return '';
+
+	if (/^[A-Za-z]:[\\/]/.test(rawTarget)) {
+		return sanitizePath(rawTarget, 'write_file', baseDir, defaultWriteName);
+	}
+
+	const safeName = sanitizeName(rawTarget);
+	if (!safeName) return '';
+	const dir = getDirName(last) || cleanupPath(baseDir);
+	return `${dir}/${safeName}`;
 };
 
 const extractBlankLineAppendSpec = (text: string): { blankLines: number; text: string } | null => {
@@ -373,6 +439,14 @@ const isBlankLinesBetweenLinesIntent = (cmdLower: string): boolean => {
 	);
 };
 
+const isWordsToLinesIntent = (cmdLower: string): boolean => {
+	return (
+		/\b(?:put|place|move|write|split|break)\b[\s\S]*\beach\s+word\b[\s\S]*\b(?:next|new)\s+line\b/.test(cmdLower) ||
+		/\bone\s+word\s+per\s+line\b/.test(cmdLower) ||
+		/\b(?:split|break)\b[\s\S]*\bwords?\b[\s\S]*\blines?\b/.test(cmdLower)
+	);
+};
+
 const extractSelectionChoice = (text: string): 1 | 2 | 3 | 4 | null => {
 	const m = String(text || '').match(/(?:^|\n)\s*(?:selection\s*:?\s*|option\s*)?(1|2|3|4)\s*(?:\n|$)/i);
 	if (!m) return null;
@@ -418,6 +492,27 @@ const extractCommandPath = (text: string): string => {
 
 const inferActionFromCommand = (text: string, contextPath: string): AxiomAction | '' => {
 	const lower = String(text || '').toLowerCase();
+	const hasFileMention = /\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(text);
+	const removeLineIntent =
+		/\b(?:remove|delete|clear)\b/.test(lower) &&
+		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
+			lower,
+		);
+	const extensionChangeIntent =
+		/\bchange\s+(?:the\s+)?extension\b/.test(lower) ||
+		/\bextension\s+to\s+\.[a-z0-9]{1,10}\b/.test(lower) ||
+		/\bconvert\b[\s\S]*\.(?:txt|text|md|json|csv|log)\b[\s\S]*\bto\b[\s\S]*\.[a-z0-9]{1,10}\b/.test(lower);
+	const deleteFileIntent =
+		!removeLineIntent &&
+		/\b(?:delete|remove|erase|trash)\b/.test(lower) &&
+		(/\b(file|txt|text|document|note)\b/.test(lower) ||
+			/\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(text) ||
+			(!!contextPath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower)));
+	const moveFileIntent =
+		(/\b(rename|renmae|move)\b/.test(lower) || extensionChangeIntent) &&
+		(/\b(file|txt|text|document|note|extension)\b/.test(lower) ||
+			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) ||
+			(!!contextPath && extensionChangeIntent));
 	const hasLineEditIntent =
 		/\b(?:add|put|set|write|change|make|update|udpate|updte|updat|udate|edit|modify|replace|rewrite)\b/.test(lower) &&
 		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
@@ -425,22 +520,31 @@ const inferActionFromCommand = (text: string, contextPath: string): AxiomAction 
 		);
 	const hasTransformIntent =
 		isSpaceAfterEachLetterIntent(lower) ||
+		removeLineIntent ||
 		hasLineEditIntent ||
 		/\breplace\b[\s\S]*\bwith\b/.test(lower) ||
 		/\b(?:every|each)\s+\d+(?:st|nd|rd|th)?\s+letter[^\n\r]*capit/.test(lower);
-	const hasRead = /\b(read|open|show)\b/.test(lower) && (/\b(file|txt|text|document|note)\b/.test(lower) || /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower));
+	const hasRead =
+		/\b(read|open|show)\b/.test(lower) &&
+		(/\b(file|txt|text|document|note)\b/.test(lower) ||
+			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) ||
+			hasFileMention);
 	const hasList = /\b(list|show)\b/.test(lower) && /\b(directory|folder|files?)\b/.test(lower);
 	const hasWrite =
 		/\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rewrite|change|replace)\b/.test(
 			lower,
 		) &&
-		(/\b(file|txt|text|document|note)\b/.test(lower) || /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower));
+		(/\b(file|txt|text|document|note)\b/.test(lower) ||
+			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) ||
+			hasFileMention);
 	if (
 		hasTransformIntent &&
 		(contextPath.length > 0 || /\b(file|txt|text|document|note|it|this|that|same|latest|last|previous|current)\b/.test(lower))
 	) {
 		return 'write_file';
 	}
+	if (moveFileIntent) return 'move_file';
+	if (deleteFileIntent) return 'delete_file';
 	if (hasRead) return 'read_file';
 	if (hasList) return 'list_directory';
 	if (hasWrite) return 'write_file';
@@ -504,6 +608,8 @@ const operationLabelMap: Record<string, string> = {
 	write_text: 'write text',
 	list_directory: 'list directory',
 	transform_text: 'transform text',
+	delete_file: 'delete file',
+	move_file: 'move file',
 	unsupported: 'unsupported operation',
 	clarify: 'clarify',
 };
@@ -616,6 +722,9 @@ const mapIRValidationErrorToMessage = (errors: string[]): string => {
 	if (errors.some((e) => e.startsWith('missing_required_param:content'))) {
 		return 'I need the text to write. Please include content for the file operation.';
 	}
+	if (errors.some((e) => e.startsWith('missing_required_param:toPath'))) {
+		return 'I need a destination path/name to move or rename the file.';
+	}
 	if (errors.some((e) => e.startsWith('operation_not_allowed_for_target'))) {
 		return 'That operation is not valid for the selected target type.';
 	}
@@ -636,6 +745,11 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const selectionChoice = extractSelectionChoice(originalCommand);
 	const defaultWriteName = String(input.defaultWriteName || 'helloWorld.txt');
 	const clarifyOnError = input.clarifyOnError !== false;
+	const inferredHistoryTarget = cleanupPath(extractCommandPath(lastUserFileCommand) || extractFileNameHint(lastUserFileCommand) || '');
+	const resolvedHistoryFilePath = inferredHistoryTarget
+		? sanitizePath(inferredHistoryTarget, 'write_file', baseDir, defaultWriteName)
+		: '';
+	const effectiveLastFilePath = cleanupPath(lastFilePath || resolvedHistoryFilePath);
 
 	const parsed = parseJsonPayload(String(input.response || '')) || {};
 	const modelConfidenceRaw = Number((parsed as any).confidence);
@@ -644,40 +758,80 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(lowerCommand);
 	const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
 	let isCreateFileWithoutPayload = !hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand);
+	const removeLineIntent =
+		/\b(?:remove|delete|clear)\b/.test(lowerCommand) &&
+		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
+			lowerCommand,
+		);
 
 	const extensionChangeIntent =
 		/\bchange\s+(?:the\s+)?extension\b/.test(lowerCommand) ||
 		/\bextension\s+to\s+\.[a-z0-9]{1,10}\b/.test(lowerCommand) ||
 		/\bconvert\b[\s\S]*\.(?:txt|text|md|json|csv|log)\b[\s\S]*\bto\b[\s\S]*\.[a-z0-9]{1,10}\b/.test(lowerCommand);
-	const renameIntent =
+	const moveIntent =
 		(/\b(rename|renmae|move)\b/.test(lowerCommand) || extensionChangeIntent) &&
 		(/\b(file|txt|text|document|note|extension)\b/.test(lowerCommand) ||
 			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) ||
-			(!!lastFilePath && extensionChangeIntent));
+			(!!effectiveLastFilePath && extensionChangeIntent));
+	const deleteFileIntent =
+		!removeLineIntent &&
+		/\b(?:delete|remove|erase|trash)\b/.test(lowerCommand) &&
+		(/\b(file|txt|text|document|note)\b/.test(lowerCommand) ||
+			/\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(commandForParsing) ||
+			(!!effectiveLastFilePath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand)));
 
-	const allowedActions: AxiomAction[] = ['write_file', 'read_file', 'list_directory', 'delete_file'];
+	const allowedActions: AxiomAction[] = ['write_file', 'read_file', 'list_directory', 'delete_file', 'move_file'];
 	let rawPlannerAction = String((parsed as any).action || '').toLowerCase();
-	if (rawPlannerAction === 'create_empty_file') {
-		rawPlannerAction = 'write_file'; console.log('OVERRIDE TRIGGERED', isCreateFileWithoutPayload);
-		isCreateFileWithoutPayload = true;
-	}
+	if (rawPlannerAction === 'create_empty_file') rawPlannerAction = 'write_file';
+	if (rawPlannerAction === 'rename_file') rawPlannerAction = 'move_file';
+	if (rawPlannerAction === 'move') rawPlannerAction = 'move_file';
+	if (rawPlannerAction === 'delete') rawPlannerAction = 'delete_file';
 	const plannerAction = allowedActions.includes(rawPlannerAction as AxiomAction)
 		? (rawPlannerAction as AxiomAction)
 		: '';
-	const inferredAction = inferActionFromCommand(commandForParsing, lastFilePath);
+	const inferredAction = inferActionFromCommand(commandForParsing, effectiveLastFilePath);
 
 	let action: AxiomAction = (plannerAction || inferredAction || (clarifyOnError ? 'clarify' : 'error')) as AxiomAction;
 	if (inferredAction && plannerAction && inferredAction !== plannerAction) {
 		action = inferredAction;
 	}
+	if (moveIntent) action = 'move_file';
+	if (deleteFileIntent) action = 'delete_file';
 	if (isCreateFileWithoutPayload) {
 		action = 'write_file';
 	}
 
-	const contextRef =
-		/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) || /\b(?:in|into)\s+it\b/.test(lowerCommand);
+	const actionFunctionMap: Partial<Record<AxiomAction, string>> = {
+		write_file: 'write_file',
+		read_file: 'read_file',
+		list_directory: 'list_directory',
+		delete_file: 'delete_file',
+		move_file: 'move_file',
+	};
+	const mappedFunction = actionFunctionMap[action];
+	if (mappedFunction) {
+		const availability = getFunctionAvailability(__dirname, mappedFunction);
+		if (!availability.available) {
+			return withFailure(
+				clarifyOnError ? 'clarify' : 'error',
+				availability.reason || `Function "${mappedFunction}" is not available.`,
+				baseDir,
+				cleanupPath(baseDir),
+				modelConfidence,
+				plannerTier,
+			);
+		}
+	}
+
 	const explicitPathFromCommand = extractCommandPath(commandForParsing);
 	const fileNameHint = extractFileNameHint(commandForParsing);
+	const namingItPhrase = /\b(?:name|named|call(?:ed)?)\s+it\b/.test(lowerCommand);
+	const createWithExplicitName =
+		/\b(?:create|make|build|generate|new)\b/.test(lowerCommand) &&
+		(/\b(?:name\s+it|named|called|filename|file\s+name)\b/.test(lowerCommand) || !!fileNameHint);
+	const contextRef =
+		(/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) || /\b(?:in|into)\s+it\b/.test(lowerCommand)) &&
+		!(namingItPhrase && createWithExplicitName);
 	const rawPath = cleanupPath((parsed as any).path || (parsed as any).filePath || (parsed as any).filename || '');
 	const hasExplicitPathInCommand =
 		!!explicitPathFromCommand || /\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/i.test(commandForParsing);
@@ -686,54 +840,63 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		baseDir,
 		defaultWriteName,
 		actionHint: action,
-		lastFilePath,
+		lastFilePath: effectiveLastFilePath,
 		explicitPathFromCommand,
 		rawPath,
 		fileNameHint,
 	});
 	let chosenPath = referenceResolution.target.path || '';
 	if (!chosenPath) {
-		chosenPath = action === 'write_file' ? lastFilePath || defaultWriteName : lastFilePath || baseDir;
+		chosenPath = action === 'write_file' ? effectiveLastFilePath || defaultWriteName : effectiveLastFilePath || baseDir;
+	}
+
+	const nonCreateWriteWithoutTarget =
+		action === 'write_file' &&
+		!/\b(?:create|make|build|generate|new)\b/.test(lowerCommand) &&
+		!contextRef &&
+		!explicitPathFromCommand &&
+		!rawPath &&
+		!effectiveLastFilePath;
+	if (nonCreateWriteWithoutTarget) {
+		return withFailure(
+			clarifyOnError ? 'clarify' : 'error',
+			'I need the target file path before I can execute this operation.',
+			baseDir,
+			cleanupPath(baseDir),
+			modelConfidence,
+			plannerTier,
+		);
 	}
 
 	let fullPath = sanitizePath(chosenPath, action, baseDir, defaultWriteName);
-	if (renameIntent) {
-		const renameIntentResult = normalizeIntent({
-			originalCommand: commandForParsing,
-			actionHint: 'write_file',
-			append: false,
-			content: '',
-			isCreateFileWithoutPayload,
-			renameIntent: true,
-			lineEdits: [],
-		});
-		const renameIR = buildIntentIR({
-			intent: renameIntentResult.intent,
-			target: {
-				...referenceResolution.target,
-				path: fullPath,
-				hasSpecificPath: !!fullPath && !String(fullPath || '').match(/[\\/]Axiom_Files[\\/]?$/i),
-			},
-			operation: renameIntentResult.operation,
-			confidence: 0.4,
-			actionHint: 'clarify',
-			isExternal: false,
-			unresolved: referenceResolution.unresolved,
-		});
-		const renameValidation = validateIntentIR(renameIR);
-		renameIR.validation = renameValidation;
-		return withFailure(
-			clarifyOnError ? 'clarify' : 'error',
-			'File rename/move/extension-change is not enabled yet. I can create, read, and update file contents. Ask me to rewrite or edit a file instead.',
-			baseDir,
-			fullPath,
-			modelConfidence,
-			plannerTier,
-			undefined,
-			renameIR,
-			renameIR.execution.mode,
-			renameValidation,
-		);
+	let destinationPath = '';
+	if (action === 'move_file') {
+		const rawTarget =
+			cleanupPath((parsed as any).destinationPath || (parsed as any).toPath || (parsed as any).newPath || (parsed as any).targetPath || '') ||
+			extractMoveTargetHint(commandForParsing, effectiveLastFilePath || fullPath, baseDir, defaultWriteName);
+		if (rawTarget) {
+			destinationPath = sanitizePath(rawTarget, 'write_file', baseDir, defaultWriteName);
+		}
+		if (!destinationPath) {
+			return withFailure(
+				clarifyOnError ? 'clarify' : 'error',
+				'I need the destination file name/path to move or rename this file.',
+				baseDir,
+				fullPath,
+				modelConfidence,
+				plannerTier,
+			);
+		}
+		if (fullPath.toLowerCase() === destinationPath.toLowerCase()) {
+			return withFailure(
+				clarifyOnError ? 'clarify' : 'error',
+				'Source and destination file paths are the same. Please provide a different target name/path.',
+				baseDir,
+				fullPath,
+				modelConfidence,
+				plannerTier,
+			);
+		}
 	}
 	let append =
 		(parsed as any).append !== undefined ? !!(parsed as any).append : String((parsed as any).writeMode || '').toLowerCase() === 'append';
@@ -755,12 +918,13 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const spaceLettersIntent = isSpaceAfterEachLetterIntent(lowerCommand);
 	const spaceWordsIntent = isSpaceBetweenWordsIntent(lowerCommand);
 	const blankLinesIntent = isBlankLinesBetweenLinesIntent(lowerCommand);
+	const wordsToLinesIntent = isWordsToLinesIntent(lowerCommand);
 	const spacingSignal = /\b(spaces?|spacing|spaced|blank\s+line|blank\s+lines|newline|new\s+line)\b/.test(lowerCommand);
 	const transformSignal = /\b(add|insert|put|make|format|transform|adjust|ensure|apply|after|between|follow\w*)\b/.test(
 		lowerCommand,
 	);
 	const hasTransformContext =
-		!!lastFilePath ||
+		!!effectiveLastFilePath ||
 		contextRef ||
 		/\b(open|read|update|udpate|updte|updat|udate|edit|modify|rewrite|change|replace|format|transform|adjust)\b/.test(
 			lowerCommand,
@@ -769,8 +933,11 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const capitalsIntent = /\bcapitals?\b/.test(lowerCommand) && /\b(write|put|add)\b/.test(lowerCommand);
 	const replaceSpec = extractReplaceSpec(commandForParsing);
 	const blankLineAppendSpec = extractBlankLineAppendSpec(commandForParsing);
+	const removeLineSpec = extractRemoveLineSpec(commandForParsing);
 	const transformVerb =
-		/\b(update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|transform|format|adjust)\b/.test(lowerCommand);
+		/\b(update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|transform|format|adjust|put|add|insert|append|set)\b/.test(
+			lowerCommand,
+		);
 
 	const spacingTransform =
 		selectionChoice === 1
@@ -783,6 +950,8 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 						? ({ type: 'space_letters' } as const)
 						: spaceWordsIntent
 							? ({ type: 'space_words' } as const)
+							: wordsToLinesIntent
+								? ({ type: 'words_to_lines' } as const)
 							: blankLinesIntent
 								? ({ type: 'blank_lines_between_lines' } as const)
 								: undefined;
@@ -799,12 +968,15 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	}
 
 	const deterministicTransform = (() => {
-		if (spacingTransform && (contextRef || !!lastFilePath || hasTransformContext)) return spacingTransform;
-		if (replaceSpec && (contextRef || transformVerb || !!lastFilePath)) return { type: 'replace_text' as const, ...replaceSpec };
-		if (commandLineEdits.length > 0 && (contextRef || transformVerb || !!lastFilePath)) {
+		if (spacingTransform && (contextRef || !!effectiveLastFilePath || hasTransformContext)) return spacingTransform;
+		if (replaceSpec && (contextRef || transformVerb || !!effectiveLastFilePath)) return { type: 'replace_text' as const, ...replaceSpec };
+		if (removeLineSpec && (contextRef || transformVerb || !!effectiveLastFilePath || removeLineIntent)) {
+			return { type: 'remove_line' as const, lines: removeLineSpec.lines };
+		}
+		if (commandLineEdits.length > 0) {
 			return { type: 'line_edit' as const, lineEdits: commandLineEdits };
 		}
-		if (blankLineAppendSpec && (contextRef || transformVerb || !!lastFilePath)) {
+		if (blankLineAppendSpec && (contextRef || transformVerb || !!effectiveLastFilePath)) {
 			return {
 				type: 'append_with_blank_lines' as const,
 				blankLines: Number(blankLineAppendSpec.blankLines || 0),
@@ -815,9 +987,9 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		return undefined;
 	})();
 
-	const missingTransformTarget = !!deterministicTransform && !explicitPathFromCommand && !rawPath && !lastFilePath;
-	if (deterministicTransform && !explicitPathFromCommand && !rawPath && lastFilePath) {
-		fullPath = sanitizePath(lastFilePath, 'read_file', baseDir, defaultWriteName);
+	const missingTransformTarget = !!deterministicTransform && !explicitPathFromCommand && !rawPath && !effectiveLastFilePath;
+	if (deterministicTransform && !explicitPathFromCommand && !rawPath && effectiveLastFilePath) {
+		fullPath = sanitizePath(effectiveLastFilePath, 'read_file', baseDir, defaultWriteName);
 	}
 	if (missingTransformTarget) {
 		return withFailure(
@@ -870,7 +1042,6 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	}
 
 	if (action === 'write_file' && !String(content || '').trim()) {
-		console.log('CHECKING EMPTY', isCreateFileWithoutPayload);
 		const hasContentKeyword = /\b(with\s+text|text\s*(?:is|:|says)|write|put|save|append|add\s+text|contain(?:ing|s)?)\b/.test(lowerCommand);
 		const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
 		isCreateFileWithoutPayload = isCreateFileWithoutPayload || (!hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand));
@@ -912,14 +1083,17 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 					? !!fullPath
 					: action === 'delete_file'
 						? !!fullPath
+						: action === 'move_file'
+							? !!fullPath && !!destinationPath && fullPath.toLowerCase() !== destinationPath.toLowerCase()
 						: false;
 	const needsContextBinding = contextRef && !hasExplicitPathInCommand;
 	const contextBindingSucceeded =
-		!needsContextBinding || (lastFilePath && sanitizePath(lastFilePath, action, baseDir, defaultWriteName).toLowerCase() === fullPath.toLowerCase());
+		!needsContextBinding ||
+		(effectiveLastFilePath && sanitizePath(effectiveLastFilePath, action, baseDir, defaultWriteName).toLowerCase() === fullPath.toLowerCase());
 
 	let contentSanity = true;
 	if (action === 'write_file') {
-		contentSanity = !!String(content || '').trim();
+		contentSanity = isCreateFileWithoutPayload ? true : !!String(content || '').trim();
 	} else if (action === 'read_file' && deterministicTransform) {
 		if (deterministicTransform.type === 'line_edit') {
 			contentSanity = Array.isArray(deterministicTransform.lineEdits) && deterministicTransform.lineEdits.length > 0;
@@ -931,9 +1105,19 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		} else if (deterministicTransform.type === 'append_with_blank_lines') {
 			const n = Number(deterministicTransform.blankLines || 0);
 			contentSanity = Number.isFinite(n) && n >= 0 && !!String(deterministicTransform.text || '').trim();
-		} else if (deterministicTransform.type === 'space_words' || deterministicTransform.type === 'blank_lines_between_lines') {
+		} else if (deterministicTransform.type === 'remove_line') {
+			contentSanity = Array.isArray(deterministicTransform.lines) && deterministicTransform.lines.length > 0;
+		} else if (
+			deterministicTransform.type === 'space_words' ||
+			deterministicTransform.type === 'words_to_lines' ||
+			deterministicTransform.type === 'blank_lines_between_lines'
+		) {
 			contentSanity = true;
 		}
+	} else if (action === 'move_file') {
+		contentSanity = !!destinationPath && fullPath.toLowerCase() !== destinationPath.toLowerCase();
+	} else if (action === 'delete_file') {
+		contentSanity = !!fullPath;
 	}
 
 	let deterministicConfidence = 0;
@@ -970,6 +1154,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		append,
 		content: action === 'write_file' ? String(content || '') : '',
 		isCreateFileWithoutPayload,
+		moveTargetPath: action === 'move_file' ? destinationPath : '',
 		renameIntent: false,
 		deterministicTransform: deterministicTransform as any,
 		lineEdits,
@@ -981,12 +1166,12 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		baseDir,
 		defaultWriteName,
 		actionHint: action,
-		lastFilePath,
+		lastFilePath: effectiveLastFilePath,
 		explicitPathFromCommand,
 		rawPath,
 		fileNameHint,
 	});
-	if (deterministicTransform && !explicitPathFromCommand && !rawPath && !!lastFilePath) {
+	if (deterministicTransform && !explicitPathFromCommand && !rawPath && !!effectiveLastFilePath) {
 		const hasSpecificBoundPath = !!fullPath && !String(fullPath || '').match(/[\\/]Axiom_Files[\\/]?$/i);
 		referenceForIR = {
 			target: {
@@ -1056,8 +1241,10 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		content: action === 'write_file' ? String(content || '') : '',
 		fullPath,
 		path: fullPath,
+		destinationPath: action === 'move_file' ? destinationPath : undefined,
 		isExternal: false,
 		append: action === 'write_file' ? append : false,
+		allowEmptyWrite: action === 'write_file' ? isCreateFileWithoutPayload : false,
 		confidence: deterministicConfidence,
 		modelConfidence,
 		parserTier: plannerTier,

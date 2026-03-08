@@ -1,0 +1,29 @@
+{
+  "name": "move_file",
+  "intent": "file_move_or_rename",
+  "description": "Move or rename a file including extension changes.",
+  "requires_existing_file": true,
+  "inputs": {
+    "source_file": "string",
+    "destination_file": "string"
+  },
+  "required_inputs": [
+    "source_file",
+    "destination_file"
+  ],
+  "deterministic": true,
+  "risk": "medium",
+  "examples": [
+    "rename it to report.txt",
+    "change extension to .json"
+  ],
+  "forbidden_cases": [
+    "source unresolved",
+    "destination unresolved",
+    "source equals destination"
+  ],
+  "executor": "filesystem.move_file",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

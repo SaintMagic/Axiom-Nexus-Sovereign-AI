@@ -1,0 +1,25 @@
+{
+  "name": "list_directory",
+  "intent": "filesystem_list",
+  "description": "List entries in a folder.",
+  "requires_existing_file": false,
+  "inputs": {
+    "target_folder": "string"
+  },
+  "required_inputs": [
+    "target_folder"
+  ],
+  "deterministic": true,
+  "risk": "low",
+  "examples": [
+    "list files in C:/Axiom_Files",
+    "show directory contents"
+  ],
+  "forbidden_cases": [
+    "target folder unresolved"
+  ],
+  "executor": "filesystem.list_directory",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

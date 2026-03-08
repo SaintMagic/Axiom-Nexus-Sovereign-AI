@@ -1,143 +1,281 @@
+import cors from 'cors';
 import express from 'express';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import {
-    CallToolRequestSchema,
-    ListToolsRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
 import fs from 'fs/promises';
 import path from 'path';
-import cors from 'cors';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: '4mb' }));
 
-// Strict Base Dir Policy
 const AXIOM_BASE_DIR = 'C:/Users/Martin/.n8n-files/Axiom_Files';
-const AXIOM_BACKUP_DIR = 'C:/Users/Martin/Axiom_Nexus/Backups'; // example fallback
+const MCP_MESSAGES_ENDPOINT = '/messages';
 
-// Prevent path traversal
-function sanitizePath(p: string): string {
-    const resolved = path.resolve(AXIOM_BASE_DIR, p.replace(/^[\/\\]+/, ''));
-    if (!resolved.toLowerCase().startsWith(AXIOM_BASE_DIR.toLowerCase())) {
-        throw new Error(`Path validation failed. Access to ${p} is strictly prohibited.`);
-    }
-    return resolved;
+interface SessionState {
+	sessionId: string;
+	server: Server;
+	transport: SSEServerTransport;
+	createdAt: number;
+	lastSeenAt: number;
 }
 
-const server = new Server(
-    { name: 'axiom-nexus-fs', version: '1.0.0' },
-    { capabilities: { tools: {} } }
-);
+const sessions = new Map<string, SessionState>();
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-        tools: [
-            {
-                name: 'write_file',
-                description: 'Writes explicitly provided text content to a file.',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        path: { type: 'string' },
-                        content: { type: 'string' },
-                        writeMode: { type: 'string', enum: ['overwrite', 'append'] }
-                    },
-                    required: ['path', 'content']
-                }
-            },
-            {
-                name: 'read_file',
-                description: 'Reads the contents of a file.',
-                inputSchema: {
-                    type: 'object',
-                    properties: { path: { type: 'string' } },
-                    required: ['path']
-                }
-            },
-            {
-                name: 'list_directory',
-                description: 'Lists all files in a directory.',
-                inputSchema: {
-                    type: 'object',
-                    properties: { path: { type: 'string' } },
-                    required: ['path']
-                }
-            },
-            {
-                name: 'create_empty_file',
-                description: 'Creates a completely empty file without writing any text.',
-                inputSchema: {
-                    type: 'object',
-                    properties: { path: { type: 'string' } },
-                    required: ['path']
-                }
-            },
-            {
-                name: 'delete_file',
-                description: 'Safely removes a specific file.',
-                inputSchema: {
-                    type: 'object',
-                    properties: { path: { type: 'string' } },
-                    required: ['path']
-                }
-            }
-        ]
-    };
+const textResult = (text: string, structuredContent?: Record<string, unknown>) => ({
+	content: [{ type: 'text' as const, text }],
+	...(structuredContent ? { structuredContent } : {}),
 });
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    const safePath = sanitizePath((args as any).path || '');
-
-    try {
-        if (name === 'write_file') {
-            const { content, writeMode } = args as any;
-            await fs.mkdir(path.dirname(safePath), { recursive: true });
-            if (writeMode === 'append') {
-                await fs.appendFile(safePath, content, 'utf8');
-            } else {
-                await fs.writeFile(safePath, content, 'utf8');
-            }
-            return { toolResult: { text: `Successfully wrote to ${safePath}` } };
-        }
-        else if (name === 'read_file') {
-            const content = await fs.readFile(safePath, 'utf8');
-            return { toolResult: { text: content } };
-        }
-        else if (name === 'list_directory') {
-            const files = await fs.readdir(safePath);
-            return { toolResult: { text: JSON.stringify(files, null, 2) } };
-        }
-        else if (name === 'create_empty_file') {
-            await fs.mkdir(path.dirname(safePath), { recursive: true });
-            await fs.writeFile(safePath, '', 'utf8');
-            return { toolResult: { text: `Created empty file at ${safePath}` } };
-        }
-        else if (name === 'delete_file') {
-            await fs.unlink(safePath);
-            return { toolResult: { text: `Deleted file at ${safePath}` } };
-        }
-        throw new Error(`Unknown tool: ${name}`);
-    } catch (e: any) {
-        return { toolResult: { text: `Error: ${e.message}`, isError: true } };
-    }
+const errorResult = (message: string, structuredContent?: Record<string, unknown>) => ({
+	content: [{ type: 'text' as const, text: `Error: ${message}` }],
+	isError: true,
+	...(structuredContent ? { structuredContent } : {}),
 });
 
-let transport: SSEServerTransport;
+const sanitizePath = (rawPath: unknown): string => {
+	const trimmed = String(rawPath || '').trim();
+	if (!trimmed) throw new Error('Path is required.');
 
-app.get('/sse', async (req, res) => {
-    transport = new SSEServerTransport('/messages', res);
-    await server.connect(transport);
+	const normalized = trimmed.replace(/\\/g, '/').replace(/^[\/\\]+/, '');
+	const resolved = path.resolve(AXIOM_BASE_DIR, normalized);
+	if (!resolved.toLowerCase().startsWith(path.resolve(AXIOM_BASE_DIR).toLowerCase())) {
+		throw new Error(`Path validation failed. Access outside base dir is prohibited: ${trimmed}`);
+	}
+	return resolved;
+};
+
+const listDirectorySafe = async (targetDir: string) => {
+	const entries = await fs.readdir(targetDir, { withFileTypes: true });
+	return entries
+		.map((e) => ({ name: e.name, type: e.isDirectory() ? 'dir' : e.isFile() ? 'file' : 'other' }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const ensureParentDir = async (targetPath: string) => {
+	await fs.mkdir(path.dirname(targetPath), { recursive: true });
+};
+
+const createMcpServer = () => {
+	const server = new Server({ name: 'axiom-nexus-fs', version: '1.1.0' }, { capabilities: { tools: {} } });
+
+	server.setRequestHandler(ListToolsRequestSchema, async () => ({
+		tools: [
+			{
+				name: 'write_file',
+				description:
+					'Write text to a file in AXIOM_BASE_DIR. Use content="" with writeMode="overwrite" for true empty-file creation.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						path: { type: 'string' },
+						content: { type: 'string' },
+						writeMode: { type: 'string', enum: ['overwrite', 'append'] },
+					},
+					required: ['path', 'content'],
+				},
+			},
+			{
+				name: 'read_file',
+				description: 'Read UTF-8 text content from a file in AXIOM_BASE_DIR.',
+				inputSchema: {
+					type: 'object',
+					properties: { path: { type: 'string' } },
+					required: ['path'],
+				},
+			},
+			{
+				name: 'list_directory',
+				description: 'List directory entries under AXIOM_BASE_DIR.',
+				inputSchema: {
+					type: 'object',
+					properties: { path: { type: 'string' } },
+					required: ['path'],
+				},
+			},
+			{
+				name: 'delete_file',
+				description: 'Delete a file in AXIOM_BASE_DIR.',
+				inputSchema: {
+					type: 'object',
+					properties: { path: { type: 'string' } },
+					required: ['path'],
+				},
+			},
+			{
+				name: 'move_file',
+				description: 'Rename or move a file within AXIOM_BASE_DIR.',
+				inputSchema: {
+					type: 'object',
+					properties: {
+						path: { type: 'string', description: 'Source path.' },
+						toPath: { type: 'string', description: 'Destination path.' },
+					},
+					required: ['path', 'toPath'],
+				},
+			},
+		],
+	}));
+
+	server.setRequestHandler(CallToolRequestSchema, async (request) => {
+		const { name, arguments: args } = request.params;
+		const payload = (args || {}) as Record<string, unknown>;
+
+		try {
+			if (name === 'write_file') {
+				const safePath = sanitizePath(payload.path ?? payload.filePath);
+				const writeMode = String(payload.writeMode || 'overwrite').toLowerCase();
+				const content = String(payload.content ?? '');
+				await ensureParentDir(safePath);
+				if (writeMode === 'append') {
+					await fs.appendFile(safePath, content, 'utf8');
+				} else {
+					await fs.writeFile(safePath, content, 'utf8');
+				}
+				return textResult(`Successfully wrote file: ${safePath}`, {
+					action: 'write_file',
+					path: safePath,
+					writeMode,
+					bytes: Buffer.byteLength(content, 'utf8'),
+					emptyWrite: content.length === 0,
+				});
+			}
+
+			if (name === 'read_file') {
+				const safePath = sanitizePath(payload.path ?? payload.filePath);
+				const content = await fs.readFile(safePath, 'utf8');
+				return textResult(content, {
+					action: 'read_file',
+					path: safePath,
+					bytes: Buffer.byteLength(content, 'utf8'),
+				});
+			}
+
+			if (name === 'list_directory') {
+				const safePath = sanitizePath(payload.path ?? payload.filePath);
+				const items = await listDirectorySafe(safePath);
+				return textResult(JSON.stringify(items, null, 2), {
+					action: 'list_directory',
+					path: safePath,
+					count: items.length,
+				});
+			}
+
+			if (name === 'delete_file') {
+				const safePath = sanitizePath(payload.path ?? payload.filePath);
+				await fs.unlink(safePath);
+				return textResult(`Deleted file: ${safePath}`, {
+					action: 'delete_file',
+					path: safePath,
+				});
+			}
+
+			if (name === 'move_file') {
+				const sourcePath = sanitizePath(payload.path ?? payload.fromPath ?? payload.sourcePath);
+				const destinationPath = sanitizePath(payload.toPath ?? payload.destinationPath ?? payload.newPath);
+				if (sourcePath.toLowerCase() === destinationPath.toLowerCase()) {
+					throw new Error('Source and destination paths are identical.');
+				}
+				await ensureParentDir(destinationPath);
+				await fs.rename(sourcePath, destinationPath);
+				return textResult(`Moved file from ${sourcePath} to ${destinationPath}`, {
+					action: 'move_file',
+					path: sourcePath,
+					destinationPath,
+				});
+			}
+
+			return errorResult(`Unknown tool: ${name}`);
+		} catch (error) {
+			return errorResult((error as Error).message || 'Tool execution failed.', {
+				action: String(name || 'unknown'),
+			});
+		}
+	});
+
+	return server;
+};
+
+const closeSession = async (sessionId: string) => {
+	const state = sessions.get(sessionId);
+	if (!state) return;
+	sessions.delete(sessionId);
+	try {
+		await state.transport.close();
+	} catch {
+		// Ignore transport close errors.
+	}
+};
+
+app.get('/sse', async (_req, res) => {
+	try {
+		const server = createMcpServer();
+		const transport = new SSEServerTransport(MCP_MESSAGES_ENDPOINT, res);
+		await server.connect(transport);
+
+		const sessionId = transport.sessionId;
+		sessions.set(sessionId, {
+			sessionId,
+			server,
+			transport,
+			createdAt: Date.now(),
+			lastSeenAt: Date.now(),
+		});
+
+		transport.onclose = () => {
+			void closeSession(sessionId);
+		};
+		transport.onerror = () => {
+			void closeSession(sessionId);
+		};
+	} catch (error) {
+		res.status(500).json({ error: (error as Error).message || 'Failed to open SSE session.' });
+	}
 });
 
 app.post('/messages', async (req, res) => {
-    if (transport) {
-        await transport.handlePostMessage(req, res);
-    }
+	const sessionId = String(req.query.sessionId || '').trim();
+	if (!sessionId) {
+		res.status(400).json({ error: 'Missing sessionId query parameter.' });
+		return;
+	}
+
+	const session = sessions.get(sessionId);
+	if (!session) {
+		res.status(404).json({ error: `Unknown or expired sessionId: ${sessionId}` });
+		return;
+	}
+
+	session.lastSeenAt = Date.now();
+	try {
+		await session.transport.handlePostMessage(req, res, req.body);
+	} catch (error) {
+		if (!res.headersSent) {
+			res.status(500).json({ error: (error as Error).message || 'Failed to process MCP message.' });
+		}
+	}
 });
+
+app.get('/health', (_req, res) => {
+	res.json({
+		status: 'ok',
+		baseDir: AXIOM_BASE_DIR,
+		sessions: sessions.size,
+	});
+});
+
+const SESSION_TTL_MS = 1000 * 60 * 30;
+setInterval(() => {
+	const now = Date.now();
+	for (const [sessionId, state] of sessions.entries()) {
+		if (now - state.lastSeenAt > SESSION_TTL_MS) {
+			void closeSession(sessionId);
+		}
+	}
+}, 1000 * 60).unref();
 
 const PORT = 3055;
 app.listen(PORT, () => {
-    console.log(`Axiom-MCP-Server listening on SSE at http://localhost:${PORT}/sse`);
+	console.log(`Axiom-MCP-Server listening on http://localhost:${PORT}`);
 });

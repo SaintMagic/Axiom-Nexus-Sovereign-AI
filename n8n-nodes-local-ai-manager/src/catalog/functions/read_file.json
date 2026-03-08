@@ -1,0 +1,25 @@
+{
+  "name": "read_file",
+  "intent": "file_read",
+  "description": "Read file text or binary content.",
+  "requires_existing_file": true,
+  "inputs": {
+    "target_file": "string"
+  },
+  "required_inputs": [
+    "target_file"
+  ],
+  "deterministic": true,
+  "risk": "low",
+  "examples": [
+    "read quick_words.txt",
+    "show file content"
+  ],
+  "forbidden_cases": [
+    "target file unresolved"
+  ],
+  "executor": "filesystem.read_file",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

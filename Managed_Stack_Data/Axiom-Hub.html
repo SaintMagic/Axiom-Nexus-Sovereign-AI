@@ -556,8 +556,37 @@
             "http://127.0.0.1:5678/webhook/axiom-router-exec",
             "http://127.0.0.1:5678/webhook-test/axiom-router-exec"
         ];
-        let history = JSON.parse(localStorage.getItem('axiomChatHistory')) || [];
-        let debugTrace = JSON.parse(localStorage.getItem('axiomDebugTrace')) || [];
+        const safeLoadJson = (key, fallback) => {
+            try {
+                const raw = localStorage.getItem(key);
+                if (!raw) return fallback;
+                const parsed = JSON.parse(raw);
+                return parsed === null || parsed === undefined ? fallback : parsed;
+            } catch {
+                return fallback;
+            }
+        };
+
+        let history = safeLoadJson('axiomChatHistory', []);
+        let debugTrace = safeLoadJson('axiomDebugTrace', []);
+        let contextState = safeLoadJson('axiomContextState', {
+            lastFilePath: '',
+            lastUserFileCommand: '',
+            lastToolAction: '',
+            pendingClarify: false,
+            pendingMode: '',
+            updatedAt: '',
+        });
+        if (!contextState || typeof contextState !== 'object') {
+            contextState = {
+                lastFilePath: '',
+                lastUserFileCommand: '',
+                lastToolAction: '',
+                pendingClarify: false,
+                pendingMode: '',
+                updatedAt: '',
+            };
+        }
 
         // Auto-resize textarea
         userInput.addEventListener('input', function () {
@@ -662,6 +691,66 @@
             localStorage.setItem('axiomDebugTrace', JSON.stringify(debugTrace));
         }
 
+        function persistContextState() {
+            localStorage.setItem('axiomContextState', JSON.stringify(contextState));
+        }
+
+        function normalizePath(raw) {
+            let p = String(raw || '').replace(/\\/g, '/').trim();
+            p = p.replace(/^[\s"']+|[\s"']+$/g, '');
+            p = p.replace(/[.,;:!?]+$/g, '');
+            return p;
+        }
+
+        function getResponseEnvelope(data) {
+            if (Array.isArray(data)) {
+                const first = data[0];
+                return first && typeof first === 'object' ? first : null;
+            }
+            if (data && typeof data === 'object') return data;
+            return null;
+        }
+
+        function updateContextFromResponse(data, requestText, mode) {
+            const envelope = getResponseEnvelope(data);
+            if (!envelope) return;
+
+            const nested = envelope.json && typeof envelope.json === 'object' ? envelope.json : {};
+            const action = String(envelope.action || nested.action || '').toLowerCase();
+            const destinationPath = normalizePath(envelope.destinationPath || nested.destinationPath || '');
+            const fullPath = normalizePath(
+                envelope.fullPath ||
+                envelope.path ||
+                nested.fullPath ||
+                nested.path ||
+                destinationPath ||
+                envelope.contextLastFilePath ||
+                nested.contextLastFilePath ||
+                ''
+            );
+            const pendingClarifyFlag = String(envelope.contextPendingClarify || nested.contextPendingClarify || '').trim();
+
+            if (fullPath && ['write_file', 'read_file', 'move_file', 'delete_file'].includes(action)) {
+                if (action === 'delete_file') {
+                    if (normalizePath(contextState.lastFilePath) === fullPath) {
+                        contextState.lastFilePath = '';
+                    }
+                } else {
+                    contextState.lastFilePath = fullPath;
+                }
+            }
+
+            if (mode === 'tool' && requestText && requestText.trim() && !/^\s*(?:option\s*)?[1-4]\s*$/i.test(requestText)) {
+                contextState.lastUserFileCommand = requestText.trim();
+            }
+
+            if (action) contextState.lastToolAction = action;
+            contextState.pendingClarify = pendingClarifyFlag ? pendingClarifyFlag === '1' : action === 'clarify';
+            contextState.pendingMode = contextState.pendingClarify ? 'clarify' : '';
+            contextState.updatedAt = new Date().toISOString();
+            persistContextState();
+        }
+
         function exportDebugSnapshot() {
             const now = new Date();
             const stamp = now.toISOString().replace(/[:.]/g, '-');
@@ -671,6 +760,7 @@
                 note: 'Contains visible workflow trace and debug metadata. Hidden model internals are not available.',
                 currentMode,
                 webhookUrls,
+                contextState,
                 chatHistory: history,
                 debugTrace,
             };
@@ -700,8 +790,17 @@
         function clearHistory() {
             localStorage.removeItem('axiomChatHistory');
             localStorage.removeItem('axiomDebugTrace');
+            localStorage.removeItem('axiomContextState');
             history = [];
             debugTrace = [];
+            contextState = {
+                lastFilePath: '',
+                lastUserFileCommand: '',
+                lastToolAction: '',
+                pendingClarify: false,
+                pendingMode: '',
+                updatedAt: '',
+            };
             chatWindow.innerHTML = '<div class="message system">History Cleared.</div>';
         }
 
@@ -752,12 +851,18 @@
 
             const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             appendMessage('user', text, timestamp);
-            saveToHistory('user', text, timestamp);
+            saveToHistory('user', text, timestamp, [], { contextState: { ...contextState } });
             saveDebugTrace('user_request', {
                 mode,
                 content: text,
                 historyCount: history.length,
             });
+
+            if (mode === 'tool' && text.trim() && !/^\s*(?:option\s*)?[1-4]\s*$/i.test(text)) {
+                contextState.lastUserFileCommand = text.trim();
+                contextState.updatedAt = new Date().toISOString();
+                persistContextState();
+            }
 
             const requestPayload = {
                 mode,
@@ -767,7 +872,9 @@
                     sender: m.sender,
                     text: m.text,
                     timestamp: m.timestamp,
+                    meta: (m.meta && typeof m.meta === 'object') ? m.meta : {},
                 })),
+                contextState,
             };
 
             userInput.value = '';
@@ -844,6 +951,8 @@
                         extractedReply: reply,
                     });
 
+                    updateContextFromResponse(data, text, mode);
+
                     if (reply) {
                         const agentSteps = ["Workflow verification passed", "Data encrypted for local storage"];
                         const replyTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -851,6 +960,7 @@
                         saveToHistory('agent', reply, replyTimestamp, agentSteps, {
                             webhookUrl,
                             latencyMs: Date.now() - startedAt,
+                            contextState: { ...contextState },
                         });
                         saveDebugTrace('agent_reply', {
                             steps: agentSteps,

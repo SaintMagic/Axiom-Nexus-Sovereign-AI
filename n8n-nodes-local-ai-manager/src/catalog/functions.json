@@ -1,0 +1,247 @@
+{
+  "version": "1.0.0",
+  "functions": [
+    {
+      "name": "write_file",
+      "category": "file_edit",
+      "description": "Create or overwrite file content.",
+      "when_to_use": [
+        "User asks to create a file with text",
+        "User asks to overwrite file content"
+      ],
+      "inputs": {
+        "target_file": "string",
+        "content": "string",
+        "write_mode": "overwrite|append"
+      },
+      "required_inputs": [
+        "target_file"
+      ],
+      "forbidden_cases": [
+        "target file unresolved and command is not explicit create intent"
+      ],
+      "implementation": "functions/write_file.json",
+      "deterministic": true,
+      "risk": "medium",
+      "tags": [
+        "file",
+        "write",
+        "create",
+        "overwrite"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "read_file",
+      "category": "file_read",
+      "description": "Read file content for display or follow-up transformation.",
+      "when_to_use": [
+        "User asks to read/show/open a file",
+        "Deterministic transform requires existing file text"
+      ],
+      "inputs": {
+        "target_file": "string"
+      },
+      "required_inputs": [
+        "target_file"
+      ],
+      "forbidden_cases": [
+        "target file unresolved"
+      ],
+      "implementation": "functions/read_file.json",
+      "deterministic": true,
+      "risk": "low",
+      "tags": [
+        "file",
+        "read",
+        "inspect"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "list_directory",
+      "category": "filesystem",
+      "description": "List files in a target folder.",
+      "when_to_use": [
+        "User asks to list directory contents"
+      ],
+      "inputs": {
+        "target_folder": "string"
+      },
+      "required_inputs": [
+        "target_folder"
+      ],
+      "forbidden_cases": [
+        "target folder unresolved"
+      ],
+      "implementation": "functions/list_directory.json",
+      "deterministic": true,
+      "risk": "low",
+      "tags": [
+        "directory",
+        "list",
+        "files"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "delete_file",
+      "category": "file_edit",
+      "description": "Delete a target file.",
+      "when_to_use": [
+        "User explicitly asks to delete/remove a file"
+      ],
+      "inputs": {
+        "target_file": "string"
+      },
+      "required_inputs": [
+        "target_file"
+      ],
+      "forbidden_cases": [
+        "target file unresolved",
+        "ambiguous destructive request"
+      ],
+      "implementation": "functions/delete_file.json",
+      "deterministic": true,
+      "risk": "high",
+      "tags": [
+        "file",
+        "delete",
+        "destructive"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "move_file",
+      "category": "file_edit",
+      "description": "Move or rename a file.",
+      "when_to_use": [
+        "User asks to rename file",
+        "User asks to move file to another path",
+        "User asks to change file extension"
+      ],
+      "inputs": {
+        "source_file": "string",
+        "destination_file": "string"
+      },
+      "required_inputs": [
+        "source_file",
+        "destination_file"
+      ],
+      "forbidden_cases": [
+        "source unresolved",
+        "destination unresolved",
+        "source equals destination"
+      ],
+      "implementation": "functions/move_file.json",
+      "deterministic": true,
+      "risk": "medium",
+      "tags": [
+        "file",
+        "rename",
+        "move",
+        "extension"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "line_edit",
+      "category": "deterministic_transform",
+      "description": "Replace or insert specific line content in existing file text.",
+      "when_to_use": [
+        "User specifies line-number updates (e.g., 6th line)"
+      ],
+      "inputs": {
+        "target_file": "string",
+        "line_edits": "array<{line:number,text:string}>"
+      },
+      "required_inputs": [
+        "target_file",
+        "line_edits"
+      ],
+      "forbidden_cases": [
+        "target file unresolved",
+        "line_edits empty"
+      ],
+      "implementation": "functions/line_edit.json",
+      "deterministic": true,
+      "risk": "low",
+      "tags": [
+        "transform",
+        "line",
+        "edit",
+        "deterministic"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "space_letters",
+      "category": "deterministic_transform",
+      "description": "Add spaces between every character in file text.",
+      "when_to_use": [
+        "User asks for spaces after each letter",
+        "User asks to space out text"
+      ],
+      "inputs": {
+        "target_file": "string"
+      },
+      "required_inputs": [
+        "target_file"
+      ],
+      "forbidden_cases": [
+        "target file unresolved"
+      ],
+      "implementation": "functions/space_letters.json",
+      "deterministic": true,
+      "risk": "low",
+      "tags": [
+        "transform",
+        "spacing",
+        "text"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    },
+    {
+      "name": "words_to_lines",
+      "category": "deterministic_transform",
+      "description": "Place each word on a separate line.",
+      "when_to_use": [
+        "User asks to put each word on separate line"
+      ],
+      "inputs": {
+        "target_file": "string"
+      },
+      "required_inputs": [
+        "target_file"
+      ],
+      "forbidden_cases": [
+        "target file unresolved"
+      ],
+      "implementation": "functions/words_to_lines.json",
+      "deterministic": true,
+      "risk": "low",
+      "tags": [
+        "transform",
+        "words",
+        "lines"
+      ],
+      "enabled": true,
+      "experimental": false,
+      "version": "1.0"
+    }
+  ]
+}

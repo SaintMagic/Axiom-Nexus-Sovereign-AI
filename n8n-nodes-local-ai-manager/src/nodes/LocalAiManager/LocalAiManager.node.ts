@@ -5,6 +5,9 @@ import {
     INodeTypeDescription,
     NodeOperationError,
 } from 'n8n-workflow';
+import { buildCatalogGuidance } from '../../lib/axiomCatalog';
+
+declare const __dirname: string;
 
 export class LocalAiManager implements INodeType {
     description: INodeTypeDescription = {
@@ -158,6 +161,11 @@ export class LocalAiManager implements INodeType {
 
                 // 2. Perform execution
                 const isCommandMode = systemDirective.toLowerCase().includes('planning brain');
+                const catalogGuidance = isCommandMode ? buildCatalogGuidance(__dirname) : '';
+                const effectiveSystemDirective =
+                    isCommandMode && catalogGuidance
+                        ? `${systemDirective}\n\n${catalogGuidance}`
+                        : systemDirective;
 
                 const generateOptions = {
                     method: 'POST' as any,
@@ -166,7 +174,7 @@ export class LocalAiManager implements INodeType {
                     body: {
                         model: modelName,
                         messages: [
-                            { role: 'system', content: systemDirective },
+                            { role: 'system', content: effectiveSystemDirective },
                             { role: 'user', content: userInput }
                         ],
                         stream: false,

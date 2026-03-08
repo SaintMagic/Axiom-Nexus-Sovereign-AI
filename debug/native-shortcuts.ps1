@@ -12,7 +12,7 @@ $shortcuts = @(
     @{
         LinkPath   = Join-Path $basePath "Launch Axiom Nexus.lnk"
         TargetPath = $psPath
-        Arguments  = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$basePath\Managed_Stack_Data\LAUNCH-GUI.ps1`""
+        Arguments  = "-NoProfile -ExecutionPolicy Bypass -File `"$basePath\Managed_Stack_Data\LAUNCH-GUI.ps1`""
         Icon       = "$psPath, 0"
     },
     @{

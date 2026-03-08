@@ -1,0 +1,26 @@
+{
+  "name": "delete_file",
+  "intent": "file_delete",
+  "description": "Delete file at target path.",
+  "requires_existing_file": true,
+  "inputs": {
+    "target_file": "string"
+  },
+  "required_inputs": [
+    "target_file"
+  ],
+  "deterministic": true,
+  "risk": "high",
+  "examples": [
+    "delete that file",
+    "remove quick_words.txt"
+  ],
+  "forbidden_cases": [
+    "target file unresolved",
+    "ambiguous destructive request"
+  ],
+  "executor": "filesystem.delete_file",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

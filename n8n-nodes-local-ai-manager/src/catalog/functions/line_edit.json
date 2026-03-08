@@ -1,0 +1,28 @@
+{
+  "name": "line_edit",
+  "intent": "transform_text",
+  "description": "Apply specific text replacements at given line numbers.",
+  "requires_existing_file": true,
+  "inputs": {
+    "target_file": "string",
+    "line_edits": "array<{line:number,text:string}>"
+  },
+  "required_inputs": [
+    "target_file",
+    "line_edits"
+  ],
+  "deterministic": true,
+  "risk": "low",
+  "examples": [
+    "insert hello on 2nd line",
+    "put alpha on 3rd line and beta on 6th line"
+  ],
+  "forbidden_cases": [
+    "target file unresolved",
+    "line_edits empty"
+  ],
+  "executor": "axiomTransform.lineEdit",
+  "enabled": true,
+  "experimental": false,
+  "version": "1.0"
+}

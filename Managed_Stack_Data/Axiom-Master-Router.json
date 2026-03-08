@@ -34,7 +34,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const body = $input.item.json.body || {};\nconst text = String(body.content || '').trim();\nlet mode = String(body.mode || 'chat').toLowerCase();\n\nif (mode === 'direct' || mode === 'direct_command' || mode === 'command') {\n  mode = 'tool';\n}\n\nconst history = Array.isArray(body.history) ? body.history : [];\nconst historyEntries = history\n  .slice(-20)\n  .map((h) => ({\n    sender: String((h && h.sender) || ''),\n    text: String((h && h.text) || ''),\n    timestamp: String((h && h.timestamp) || ''),\n  }));\n\nconst historyText = historyEntries\n  .map((h) => `${h.sender || 'unknown'}: ${h.text}`)\n  .join('\\n');\n\nconst cleanupPath = (raw) => {\n  let p = String(raw || '').replace(/\\\\/g, '/').trim();\n  p = p.replace(/^[\\s\"'\u00060]+|[\\s\"'\u00060]+$/g, '');\n  p = p.replace(/[\\]\\)\\}]+$/g, '');\n  p = p.replace(/[.,;:!?]+$/g, '');\n  return p;\n};\n\nconst pathRegex = /([A-Za-z]:[\\\\/][^\\n\\r]+)/g;\n\nconst extractPathCandidates = (msg) => {\n  const source = String(msg || '');\n  const out = [];\n\n  const targetLine = source.match(/Target file path:\\s*([^\\n\\r]+)/i);\n  if (targetLine && targetLine[1]) out.push(targetLine[1]);\n\n  const commonInline = [...source.matchAll(/(?:file\\s+to|path\\s*:|at)\\s*([A-Za-z]:[\\\\/][^\\n\\r]+)/gi)];\n  for (const m of commonInline) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  const generic = [...source.matchAll(pathRegex)];\n  for (const m of generic) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  return out;\n};\n\nconst extractLastPath = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const msg = entries[i].text || '';\n    const matches = extractPathCandidates(msg);\n    for (let j = matches.length - 1; j >= 0; j--) {\n      const p = cleanupPath(matches[j] || '');\n      if (p) return p;\n    }\n  }\n  return '';\n};\n\nconst fileIntentRegex = /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move|read|open|show|list)\\b[\\s\\S]*\\b(file|txt|text|document|note|folder|directory|files?)\\b/i;\n\nconst extractLastUserFileCommand = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const e = entries[i];\n    if ((e.sender || '').toLowerCase() !== 'user') continue;\n    if (fileIntentRegex.test(e.text || '')) return String(e.text || '').trim();\n  }\n  return '';\n};\n\nconst readTextFileSafe = (absolutePath) => {\n  try {\n    const fs = require('fs');\n    const p = cleanupPath(absolutePath);\n    if (!p || !fs.existsSync(p)) return '';\n    return String(fs.readFileSync(p, 'utf8') || '').slice(0, 5000);\n  } catch (e) {\n    return '';\n  }\n};\n\nconst lastFilePath = cleanupPath(extractLastPath(historyEntries));\nconst lastUserFileCommand = extractLastUserFileCommand(historyEntries);\n\nconst shortFollowUp = /^\\s*(do it|you do it|make it|please do it|i need you to make it|i need you top make it|just do it)\\s*[.!?]*\\s*$/i.test(text);\nconst optionSelectionMatch = text.match(/^\\s*(?:option\\s*)?(1|2|3|4)\\s*$/i);\n\nconst lowerText = text.toLowerCase();\nconst hasContextPronoun = /\\b(it|this|that|same)\\b/.test(lowerText);\nconst hasWriteVerb = /\\b(write|put|add|append|update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|create|make|include|insert|format|transform|adjust|rename|renmae|move)\\b/.test(lowerText);\nconst hasLineIntent = /\\b(?:\\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\\s+line\\b/.test(lowerText);\nconst hasLatestFileReference = /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/.test(lowerText);\nconst hasSpacingTransformIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerText) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\bblank\\s+lines?\\b[\\s\\S]*\\bbetween\\s+lines?\\b/.test(lowerText) ||\n  /\\bbetween\\s+words?\\b[\\s\\S]*\\bspace\\b/.test(lowerText);\nconst hasReplaceIntent = /\\breplace\\b[\\s\\S]*\\bwith\\b/.test(lowerText);\nconst hasTransformFollowUp = hasSpacingTransformIntent || hasReplaceIntent;\n\nlet normalizedContent = text;\n\nif (mode === 'tool' && shortFollowUp && lastUserFileCommand) {\n  normalizedContent = lastUserFileCommand;\n}\n\nif (mode === 'tool' && optionSelectionMatch && lastUserFileCommand) {\n  normalizedContent = `${lastUserFileCommand}\\n\\nSelection: ${optionSelectionMatch[1]}`;\n}\n\nconst needsContextBinding = !!lastFilePath && (\n  /\\b(that|this|same)\\s+file\\b/.test(lowerText) ||\n  /\\b(?:in|into)\\s+it\\b/.test(lowerText) ||\n  hasLatestFileReference ||\n  (hasContextPronoun && hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  (!!optionSelectionMatch && mode === 'tool')\n);\n\nif (needsContextBinding) {\n  if (!/Target file path:/i.test(normalizedContent)) {\n    normalizedContent += `\\n\\nTarget file path: ${lastFilePath}`;\n  }\n  const currentFileContent = readTextFileSafe(lastFilePath);\n  if (currentFileContent) {\n    normalizedContent += `\\n\\nCurrent file content:\\n${currentFileContent}`;\n  }\n}\n\nconst toolIntent = [\n  /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(read|open|show)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(list|show)\\b.*\\b(directory|folder|files?)\\b/,\n  /\\b(make|create)\\b.*\\b(folder|directory)\\b/,\n  /\\b(that|this|same)\\s+file\\b/,\n  /\\b(?:in|into)\\s+it\\b/,\n  /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/,\n  /\\bmake\\s+me\\b.*\\b(txt|file)\\b/,\n  /\\bhello\\s+world\\b.*\\b(txt|file)\\b/,\n].some((r) => r.test(normalizedContent.toLowerCase()));\n\nconst explicitSelection = /^\\s*(?:option\\s*)?[1-4]\\s*$/i.test(text);\nconst contextualFileFollowUp = !!lastFilePath && (\n  ((/\\b(it|this|that|same)\\b/.test(lowerText) || /\\b(?:in|into)\\s+it\\b/.test(lowerText) || hasLatestFileReference) && hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  /^\\s*text\\s+is\\b/.test(lowerText) ||\n  /^\\s*insert\\b/.test(lowerText) ||\n  /^\\s*add\\b/.test(lowerText) ||\n  /^\\s*replace\\b/.test(lowerText)\n);\n\nlet chatExecutionGuard = false;\nlet chatGuardMessage = '';\nif (mode === 'chat' && (toolIntent || shortFollowUp || contextualFileFollowUp || (explicitSelection && !!lastUserFileCommand))) {\n  chatExecutionGuard = true;\n  chatGuardMessage = 'This looks like a file/tool operation. Switch to Direct Command to run it safely.';\n}\n\nreturn {\n  json: {\n    mode,\n    content: normalizedContent,\n    historyText,\n    lastFilePath,\n    lastUserFileCommand,\n    chatExecutionGuard,\n    chatGuardMessage,\n  },\n};"
+        "jsCode": "const body = $input.item.json.body || {};\nconst text = String(body.content || '').trim();\nlet mode = String(body.mode || 'chat').toLowerCase();\n\nif (mode === 'direct' || mode === 'direct_command' || mode === 'command') {\n  mode = 'tool';\n}\n\nconst history = Array.isArray(body.history) ? body.history : [];\nconst historyEntries = history\n  .slice(-20)\n  .map((h) => ({\n    sender: String((h && h.sender) || ''),\n    text: String((h && h.text) || ''),\n    timestamp: String((h && h.timestamp) || ''),\n    meta: (h && typeof h.meta === 'object' && h.meta) ? h.meta : {},\n  }));\n\nconst contextState = (body.contextState && typeof body.contextState === 'object') ? body.contextState : {};\n\nconst historyText = historyEntries\n  .map((h) => `${h.sender || 'unknown'}: ${h.text}`)\n  .join('\\n');\n\nconst cleanupPath = (raw) => {\n  let p = String(raw || '').replace(/\\\\/g, '/').trim();\n  p = p.replace(/^[\\s\"']+|[\\s\"']+$/g, '');\n  p = p.replace(/[\\]\\)\\}]+$/g, '');\n  p = p.replace(/[.,;:!?]+$/g, '');\n  return p;\n};\n\nconst pathRegex = /([A-Za-z]:[\\\\/][^\\n\\r]+)/g;\n\nconst extractPathCandidates = (msg) => {\n  const source = String(msg || '');\n  const out = [];\n\n  const targetLine = source.match(/Target file path:\\s*([^\\n\\r]+)/i);\n  if (targetLine && targetLine[1]) out.push(targetLine[1]);\n\n  const commonInline = [...source.matchAll(/(?:file\\s+to|path\\s*:|at)\\s*([A-Za-z]:[\\\\/][^\\n\\r]+)/gi)];\n  for (const m of commonInline) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  const generic = [...source.matchAll(pathRegex)];\n  for (const m of generic) {\n    if (m && m[1]) out.push(m[1]);\n  }\n\n  return out;\n};\n\nconst extractLastPath = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const entry = entries[i] || {};\n    const meta = (entry.meta && typeof entry.meta === 'object') ? entry.meta : {};\n    const metaState = (meta.contextState && typeof meta.contextState === 'object') ? meta.contextState : {};\n    const metaPath = cleanupPath(meta.lastFilePath || meta.contextLastFilePath || metaState.lastFilePath || '');\n    if (metaPath) return metaPath;\n\n    const msg = entry.text || '';\n    const matches = extractPathCandidates(msg);\n    for (let j = matches.length - 1; j >= 0; j--) {\n      const p = cleanupPath(matches[j] || '');\n      if (p) return p;\n    }\n  }\n  return '';\n};\n\nconst fileIntentRegex = /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move|delete|remove|erase|trash|read|open|show|list)\\b[\\s\\S]*\\b(file|txt|text|document|note|folder|directory|files?)\\b/i;\n\nconst extractLastUserFileCommand = (entries) => {\n  for (let i = entries.length - 1; i >= 0; i--) {\n    const e = entries[i];\n    if ((e.sender || '').toLowerCase() !== 'user') continue;\n    if (fileIntentRegex.test(e.text || '')) return String(e.text || '').trim();\n  }\n  return '';\n};\n\nconst readTextFileSafe = (absolutePath) => {\n  try {\n    const fs = require('fs');\n    const p = cleanupPath(absolutePath);\n    if (!p || !fs.existsSync(p)) return '';\n    return String(fs.readFileSync(p, 'utf8') || '').slice(0, 5000);\n  } catch (e) {\n    return '';\n  }\n};\n\nconst contextLastFilePath = cleanupPath(contextState.lastFilePath || contextState.contextLastFilePath || '');\nconst contextLastUserFileCommand = String(contextState.lastUserFileCommand || '').trim();\nconst lastFilePath = cleanupPath(contextLastFilePath || extractLastPath(historyEntries));\nconst lastUserFileCommand = contextLastUserFileCommand || extractLastUserFileCommand(historyEntries);\n\nconst shortFollowUp = /^\\s*(do it|you do it|make it|please do it|i need you to make it|i need you top make it|just do it)\\s*[.!?]*\\s*$/i.test(text);\nconst optionSelectionMatch = text.match(/^\\s*(?:option\\s*)?(1|2|3|4)\\s*$/i);\n\nconst lowerText = text.toLowerCase();\nconst hasContextPronoun = /\\b(it|this|that|same)\\b/.test(lowerText);\nconst hasWriteVerb = /\\b(write|put|add|append|update|udpate|updte|updat|udate|edit|modify|change|replace|rewrite|create|make|include|insert|format|transform|adjust|rename|renmae|move|delete|remove|erase|trash)\\b/.test(lowerText);\nconst hasLineIntent = /\\b(?:\\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\\s+line\\b/.test(lowerText);\nconst hasLatestFileReference = /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/.test(lowerText);\nconst hasSpacingTransformIntent =\n  /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerText) ||\n  /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerText) ||\n  /\\bafter\\s+each\\s+(?:letter|character|char)\\b[\\s\\S]*\\b(?:add|insert|put|include)\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\b(?:every|each)\\s+(?:letter|character|char)\\b[\\s\\S]*\\bfollow\\w*\\b[\\s\\S]*\\bspace\\b/.test(lowerText) ||\n  /\\bblank\\s+lines?\\b[\\s\\S]*\\bbetween\\s+lines?\\b/.test(lowerText) ||\n  /\\bbetween\\s+words?\\b[\\s\\S]*\\bspace\\b/.test(lowerText);\nconst hasReplaceIntent = /\\breplace\\b[\\s\\S]*\\bwith\\b/.test(lowerText);\nconst hasTransformFollowUp = hasSpacingTransformIntent || hasReplaceIntent;\nconst isCreateWithName = /\\b(create|make|build|generate|new)\\b/.test(lowerText) && /\\b(name\\s+it|named|called|filename|file\\s+name)\\b/.test(lowerText);\n\nlet normalizedContent = text;\n\nif (mode === 'tool' && shortFollowUp && lastUserFileCommand) {\n  normalizedContent = lastUserFileCommand;\n}\n\nif (mode === 'tool' && optionSelectionMatch && lastUserFileCommand) {\n  normalizedContent = `${lastUserFileCommand}\\n\\nSelection: ${optionSelectionMatch[1]}`;\n}\n\nconst needsContextBinding = !!lastFilePath && (\n  /\\b(that|this|same)\\s+file\\b/.test(lowerText) ||\n  /\\b(?:in|into)\\s+it\\b/.test(lowerText) ||\n  hasLatestFileReference ||\n  (hasContextPronoun && hasWriteVerb && !isCreateWithName) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  (!!optionSelectionMatch && mode === 'tool')\n);\n\nif (needsContextBinding) {\n  if (!/Target file path:/i.test(normalizedContent)) {\n    normalizedContent += `\\n\\nTarget file path: ${lastFilePath}`;\n  }\n  const currentFileContent = readTextFileSafe(lastFilePath);\n  if (currentFileContent) {\n    normalizedContent += `\\n\\nCurrent file content:\\n${currentFileContent}`;\n  }\n}\n\nconst toolIntent = [\n  /\\b(write|put|create|save|append|update|udpate|updte|updat|udate|edit|modify|add|make|build|generate|include|insert|format|transform|adjust|rename|renmae|move|delete|remove|erase|trash)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(read|open|show)\\b.*\\b(file|txt|text|document|note)\\b/,\n  /\\b(list|show)\\b.*\\b(directory|folder|files?)\\b/,\n  /\\b(make|create)\\b.*\\b(folder|directory)\\b/,\n  /\\b(that|this|same)\\s+file\\b/,\n  /\\b(?:in|into)\\s+it\\b/,\n  /\\b(?:latest|last|previous|current)\\s+(?:txt|text|file|document)\\b/,\n  /\\bmake\\s+me\\b.*\\b(txt|file)\\b/,\n  /\\bhello\\s+world\\b.*\\b(txt|file)\\b/,\n].some((r) => r.test(normalizedContent.toLowerCase()));\n\nconst explicitSelection = /^\\s*(?:option\\s*)?[1-4]\\s*$/i.test(text);\nconst contextualFileFollowUp = !!lastFilePath && (\n  ((/\\b(it|this|that|same)\\b/.test(lowerText) || /\\b(?:in|into)\\s+it\\b/.test(lowerText) || hasLatestFileReference) && hasWriteVerb) ||\n  hasLineIntent ||\n  hasTransformFollowUp ||\n  /^\\s*text\\s+is\\b/.test(lowerText) ||\n  /^\\s*insert\\b/.test(lowerText) ||\n  /^\\s*add\\b/.test(lowerText) ||\n  /^\\s*replace\\b/.test(lowerText)\n);\n\nlet chatExecutionGuard = false;\nlet chatGuardMessage = '';\nif (mode === 'chat' && (toolIntent || shortFollowUp || contextualFileFollowUp || (explicitSelection && !!lastUserFileCommand))) {\n  chatExecutionGuard = true;\n  chatGuardMessage = 'This looks like a file/tool operation. Switch to Direct Command to run it safely.';\n}\n\nreturn {\n  json: {\n    mode,\n    rawContent: text,\n    content: normalizedContent,\n    historyText,\n    lastFilePath,\n    lastUserFileCommand,\n    chatExecutionGuard,\n    chatGuardMessage,\n    contextState: {\n      ...contextState,\n      lastFilePath,\n      lastUserFileCommand,\n    },\n  },\n};"
       }
     },
     {
@@ -179,7 +179,7 @@
       "parameters": {
         "mode": "rules",
         "options": {
-          "fallbackOutput": 3
+          "fallbackOutput": 5
         },
         "rules": {
           "values": [
@@ -268,6 +268,54 @@
                 "conditions": [
                   {
                     "leftValue": "={{ $json.action }}",
+                    "rightValue": "delete_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-delete"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 4,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "move_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "cond-move"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "renameOutput": false,
+              "outputIndex": 5,
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action }}",
                     "rightValue": "clarify",
                     "operator": {
                       "type": "string",
@@ -281,7 +329,7 @@
             },
             {
               "renameOutput": false,
-              "outputIndex": 3,
+              "outputIndex": 5,
               "conditions": {
                 "options": {
                   "caseSensitive": true,
@@ -396,12 +444,12 @@
         100
       ],
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
               "name": "response",
-              "value": "=I have successfully written the file to {{$json.fullPath || $json.fileName || $json.path || \"C:/Users/Martin/.n8n-files/Axiom_Files\"}}."
+              "value": "={{ $json.allowEmptyWrite ? (\"I have successfully created an empty file at \" + ($json.fullPath || $json.fileName || $json.path || \"C:/Users/Martin/.n8n-files/Axiom_Files\") + \".\") : (\"I have successfully written the file to \" + ($json.fullPath || $json.fileName || $json.path || \"C:/Users/Martin/.n8n-files/Axiom_Files\") + \".\") }}"
             },
             {
               "name": "status",
@@ -446,7 +494,7 @@
         300
       ],
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
@@ -554,7 +602,7 @@
         0
       ],
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
@@ -604,12 +652,24 @@
         200
       ],
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
               "name": "response",
               "value": "={{ (($json.response && String($json.response).trim().length > 0) ? $json.response : ($json.message || \"Workflow completed, but no response payload was generated.\")) }}"
+            },
+            {
+              "name": "contextLastFilePath",
+              "value": "={{ String($json.destinationPath || $json.fullPath || $json.path || $json.contextLastFilePath || \"\").replace(/\\\\/g, \"/\") }}"
+            },
+            {
+              "name": "contextLastToolAction",
+              "value": "={{ $json.action || \"\" }}"
+            },
+            {
+              "name": "contextPendingClarify",
+              "value": "={{ ($json.action === \"clarify\" || $json.status === \"clarify\") ? \"1\" : \"0\" }}"
             }
           ]
         }
@@ -737,7 +797,7 @@
         "conditions": {
           "boolean": [
             {
-              "value1": "={{ ($json.action === \"clarify\") || ((String($json.parserTier || \"\") === \"heavy\") && $json.action !== \"error\") || (($json.action !== \"error\") && Number($json.confidence || 0) >= 0.72 && ($json.action !== \"write_file\" || (String($json.content || \"\").trim().length > 0 && !!$json.hasSpecificFilePath))) }}",
+              "value1": "={{ ($runIndex >= 2) || ($json.action === \"clarify\") || (String($json.parserTier || \"\") === \"heavy\") || (($json.action !== \"error\") && Number($json.confidence || 0) >= 0.72 && ($json.action !== \"write_file\" || (String($json.content || \"\").trim().length > 0 && !!$json.hasSpecificFilePath))) }}",
               "value2": true
             }
           ]
@@ -776,7 +836,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const originalCommand = String($node['Extract Input'].json.content || '');\nconst lowerCommand = originalCommand.toLowerCase();\nconst fullPath = String($json.fullPath || $json.fileName || $json.path || '').replace(/\\\\/g, '/');\nconst plannedContent = String($json.content ?? '');\nconst action = String($json.action || '');\n\nconst out = {\n  ...$json,\n  verification: {\n    ok: true,\n    reason: 'ok',\n    checkedPath: fullPath,\n    mode: action || 'unknown',\n    verifiedBy: 'plan',\n  },\n};\n\nif (action === 'write_file') {\n  if (!fullPath) {\n    out.verification = { ok: false, reason: 'Missing target file path', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  if (!plannedContent.trim()) {\n    out.verification = { ok: false, reason: 'Write plan has empty content', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  const isSpaceIntent = /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerCommand);\n\n  if (isSpaceIntent) {\n    const letters = (plannedContent.match(/[A-Za-z]/g) || []).length;\n    const spaced = (plannedContent.match(/[A-Za-z] /g) || []).length;\n    const ratio = letters > 0 ? (spaced / letters) : 0;\n    const ok = letters > 0 && ratio >= 0.85;\n    out.verification = {\n      ok,\n      reason: ok ? 'ok' : `Planned content does not apply space-after-each-letter (ratio ${ratio.toFixed(2)})`,\n      checkedPath: fullPath,\n      mode: 'write',\n      verifiedBy: 'plan',\n      ratio,\n    };\n    return { json: out };\n  }\n}\n\nreturn { json: out };"
+        "jsCode": "const originalCommand = String($node['Extract Input'].json.content || '');\nconst lowerCommand = originalCommand.toLowerCase();\nconst fullPath = String($json.fullPath || $json.fileName || $json.path || '').replace(/\\\\/g, '/');\nconst destinationPath = String($json.destinationPath || '').replace(/\\\\/g, '/');\nconst plannedContent = String($json.content ?? '');\nconst action = String($json.action || '');\nconst allowEmptyWrite = $json.allowEmptyWrite === true;\nconst allowEmptyContent = allowEmptyWrite || $json.postReadTransformApplied === true;\n\nconst out = {\n  ...$json,\n  verification: {\n    ok: true,\n    reason: 'ok',\n    checkedPath: fullPath,\n    mode: action || 'unknown',\n    verifiedBy: 'plan',\n  },\n};\n\nif (action === 'write_file') {\n  if (!fullPath) {\n    out.verification = { ok: false, reason: 'Missing target file path', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  if (!allowEmptyContent && !plannedContent.trim()) {\n    out.verification = { ok: false, reason: 'Write plan has empty content', checkedPath: fullPath, mode: 'write', verifiedBy: 'plan' };\n    return { json: out };\n  }\n\n  const isSpaceIntent = /\\b(?:space|spacing)\\b.*\\b(?:after|between)\\b.*\\b(?:each|every)\\b.*\\b(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\binclude\\s+space\\s+after\\s+each\\s+(?:letter|character|char)\\b/.test(lowerCommand)\n    || /\\bspace\\s+out\\s+(?:the\\s+)?(?:letters|text)\\b/.test(lowerCommand);\n\n  if (isSpaceIntent && !allowEmptyContent) {\n    const letters = (plannedContent.match(/[A-Za-z]/g) || []).length;\n    const spaced = (plannedContent.match(/[A-Za-z] /g) || []).length;\n    const ratio = letters > 0 ? (spaced / letters) : 0;\n    const ok = letters > 0 && ratio >= 0.85;\n    out.verification = {\n      ok,\n      reason: ok ? 'ok' : ('Planned content does not apply space-after-each-letter (ratio ' + ratio.toFixed(2) + ')'),\n      checkedPath: fullPath,\n      mode: 'write',\n      verifiedBy: 'plan',\n      ratio,\n    };\n    return { json: out };\n  }\n}\n\nif (action === 'delete_file') {\n  if (!fullPath) {\n    out.verification = { ok: false, reason: 'Missing target file path', checkedPath: fullPath, mode: 'delete', verifiedBy: 'plan' };\n    return { json: out };\n  }\n}\n\nif (action === 'move_file') {\n  if (!fullPath || !destinationPath) {\n    out.verification = { ok: false, reason: 'Missing source or destination path', checkedPath: fullPath, mode: 'move', verifiedBy: 'plan' };\n    return { json: out };\n  }\n  if (fullPath.toLowerCase() === destinationPath.toLowerCase()) {\n    out.verification = { ok: false, reason: 'Source and destination are the same', checkedPath: fullPath, mode: 'move', verifiedBy: 'plan' };\n    return { json: out };\n  }\n}\n\nreturn { json: out };"
       },
       "id": "node-verify-tool-result",
       "name": "Verify Tool Result",
@@ -814,7 +874,7 @@
           "string": [
             {
               "name": "response",
-              "value": "=Write verification failed for {{$json.verification.checkedPath || $json.fullPath || \"target file\"}}: {{$json.verification.reason || \"Unknown reason\"}}."
+              "value": "={{ $json.verification ? (\"Execution verification failed for \" + ($json.verification.checkedPath || $json.fullPath || \"target\") + \": \" + ($json.verification.reason || \"Unknown reason\") + \".\") : (\"Execution failed: \" + ($json.message || $json.error || \"Unknown execution error\") + \".\") }}"
             },
             {
               "name": "status",
@@ -936,7 +996,7 @@
     },
     {
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
@@ -1015,12 +1075,116 @@
         -80
       ],
       "parameters": {
-        "keepOnlySet": true,
+        "keepOnlySet": false,
         "values": {
           "string": [
             {
               "name": "response",
               "value": "={{ $json.chatGuardMessage || \"This looks like a file/tool operation. Switch to Direct Command to run it safely.\" }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-tool-delete",
+      "name": "Tool: Delete File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        350
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fs = require('fs');\nconst fullPath = String($json.fullPath || $json.path || '').split('\\\\').join('/');\nif (!fullPath) throw new Error('Missing file path for delete operation.');\nif (!fs.existsSync(fullPath)) throw new Error('File not found: ' + fullPath);\nfs.unlinkSync(fullPath);\nreturn {\n  json: {\n    ...$json,\n    action: 'delete_file',\n    fullPath,\n    path: fullPath,\n    deleteResult: 'deleted',\n  },\n};"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-tool-move",
+      "name": "Tool: Move File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        430
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const fs = require('fs');\nconst path = require('path');\nconst sourcePath = String($json.fullPath || $json.path || '').split('\\\\').join('/');\nconst destinationPath = String($json.destinationPath || '').split('\\\\').join('/');\nif (!sourcePath) throw new Error('Missing source path for move operation.');\nif (!destinationPath) throw new Error('Missing destination path for move operation.');\nif (sourcePath.toLowerCase() === destinationPath.toLowerCase()) throw new Error('Source and destination paths are the same.');\nif (!fs.existsSync(sourcePath)) throw new Error('Source file not found: ' + sourcePath);\nfs.mkdirSync(path.dirname(destinationPath), { recursive: true });\nfs.renameSync(sourcePath, destinationPath);\nreturn {\n  json: {\n    ...$json,\n    action: 'move_file',\n    sourcePath,\n    destinationPath,\n    fullPath: destinationPath,\n    path: destinationPath,\n    moveResult: 'moved',\n  },\n};"
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "node-format-delete",
+      "name": "Format Delete Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        350
+      ],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "=I have successfully deleted the file at {{$json.path || $json.fullPath || \"target file\"}}."
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"delete_file\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "node-format-move",
+      "name": "Format Move Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        430
+      ],
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": [
+            {
+              "name": "response",
+              "value": "=I have successfully moved the file from {{$json.sourcePath || \"source file\"}} to {{$json.destinationPath || $json.fullPath || \"destination file\"}}."
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "action",
+              "value": "={{$json.action || \"move_file\"}}"
+            },
+            {
+              "name": "error",
+              "value": ""
+            },
+            {
+              "name": "traceId",
+              "value": "={{$json.traceId || \"no-trace\"}}"
             }
           ]
         }
@@ -1112,6 +1276,20 @@
         [
           {
             "node": "Tool: List Directory",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool: Delete File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tool: Move File",
             "type": "main",
             "index": 0
           }
@@ -1325,7 +1503,7 @@
         ],
         [
           {
-            "node": "Parse Error",
+            "node": "Error Tool Format",
             "type": "main",
             "index": 0
           }
@@ -1580,6 +1758,64 @@
       ]
     },
     "Chat Execution Policy": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Delete File": {
+      "main": [
+        [
+          {
+            "node": "Format Delete Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Move File": {
+      "main": [
+        [
+          {
+            "node": "Format Move Output",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Write Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Delete Output": {
+      "main": [
+        [
+          {
+            "node": "Unify Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Move Output": {
       "main": [
         [
           {
