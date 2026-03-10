@@ -295,6 +295,216 @@
             transition: color 0.3s ease;
         }
 
+        .model-toolbar {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .model-toolbar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .model-toolbar label {
+            font-size: 0.75rem;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .model-toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .model-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .model-btn:hover:not(:disabled) {
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .model-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #model-selector {
+            display: none;
+        }
+
+        .model-catalog-list {
+            max-height: 210px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            padding-right: 4px;
+        }
+
+        .model-section {
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.18);
+            padding: 8px;
+        }
+
+        .model-section-title {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .model-entry {
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.26);
+            padding: 8px 10px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+        }
+
+        .model-entry:hover {
+            border-color: rgba(0, 122, 255, 0.35);
+            background: rgba(0, 122, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .model-entry.active {
+            border-color: rgba(0, 122, 255, 0.6);
+            background: rgba(0, 122, 255, 0.12);
+            box-shadow: 0 0 0 1px rgba(0, 122, 255, 0.25);
+        }
+
+        .model-entry-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .model-entry-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            word-break: break-word;
+        }
+
+        .model-entry-tags {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .model-chip {
+            font-size: 0.68rem;
+            padding: 2px 7px;
+            border-radius: 999px;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .model-chip.installed {
+            color: #28c76f;
+            border-color: rgba(40, 199, 111, 0.45);
+            background: rgba(40, 199, 111, 0.12);
+        }
+
+        .model-chip.not-installed {
+            color: #ffbf4d;
+            border-color: rgba(255, 191, 77, 0.45);
+            background: rgba(255, 191, 77, 0.12);
+        }
+
+        .model-entry-text {
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+            line-height: 1.35;
+            margin: 2px 0;
+        }
+
+        .model-entry.minimal .model-entry-text {
+            font-size: 0.72rem;
+        }
+
+        .model-row-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .model-mini-btn {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            font-size: 0.68rem;
+            padding: 3px 7px;
+            cursor: pointer;
+        }
+
+        .model-mini-btn:hover {
+            color: var(--text-primary);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        #model-note {
+            font-size: 0.76rem;
+            color: var(--text-secondary);
+            line-height: 1.35;
+            min-height: 18px;
+        }
+
+        #model-install-status {
+            font-size: 0.74rem;
+            color: var(--text-secondary);
+        }
+
+        #model-current-label {
+            max-width: 360px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .model-toolbar.collapsed .model-catalog-list,
+        .model-toolbar.collapsed #model-install-actions {
+            display: none;
+        }
+
+        .model-toolbar.collapsed #model-note {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         /* Input Container structure */
         .input-container {
             display: flex;
@@ -421,6 +631,93 @@
             fill: currentColor;
         }
 
+        #internet-toggle-btn {
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text-secondary);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+        }
+
+        #internet-toggle-btn:hover {
+            transform: scale(1.05);
+            color: var(--text-primary);
+        }
+
+        #internet-toggle-btn.active {
+            color: #46d6ff;
+            border-color: rgba(70, 214, 255, 0.6);
+            background: rgba(70, 214, 255, 0.12);
+            box-shadow: 0 0 0 1px rgba(70, 214, 255, 0.25);
+        }
+
+        #internet-toggle-btn svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        .internet-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        .internet-modal-overlay.active {
+            display: flex;
+        }
+
+        .internet-modal-card {
+            width: min(420px, calc(100vw - 30px));
+            background: rgba(8, 18, 40, 0.96);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 14px;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+        }
+
+        .internet-modal-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            letter-spacing: 0.3px;
+        }
+
+        .internet-modal-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .internet-option-btn {
+            width: 100%;
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            font-size: 0.84rem;
+            text-align: left;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        .internet-option-btn:hover {
+            border-color: rgba(70, 214, 255, 0.6);
+            background: rgba(70, 214, 255, 0.12);
+        }
+
         /* Loading Indicator */
         .typing-indicator {
             display: none;
@@ -484,7 +781,7 @@
                     <h1>Axiom Hub</h1>
                     <div class="subtitle">
                         <div class="status-dot"></div>
-                        OpenClaw Sovereign Engine Online
+                        Axiom Agent Sovereign Engine Online
                     </div>
                 </div>
             </div>
@@ -518,6 +815,24 @@
                 Chat Mode Active
             </div>
 
+            <div id="model-toolbar" class="model-toolbar">
+                <div class="model-toolbar-header">
+                    <label for="model-selector">Model Catalog</label>
+                    <div class="model-toolbar-actions">
+                        <span id="model-current-label" class="model-chip">Current: -</span>
+                        <button id="toggle-model-catalog-btn" class="model-btn" type="button">Expand</button>
+                        <button id="refresh-models-btn" class="model-btn" type="button">Refresh</button>
+                    </div>
+                </div>
+                <select id="model-selector" title="Select the active model"></select>
+                <div id="model-catalog-list" class="model-catalog-list"></div>
+                <div id="model-install-actions" class="model-toolbar-actions">
+                    <button id="install-model-btn" class="model-btn" type="button">Install Selected</button>
+                    <div id="model-install-status"></div>
+                </div>
+                <div id="model-note">Loading model catalog...</div>
+            </div>
+
             <div class="input-container">
                 <div class="action-btns">
                     <button class="mode-btn active" data-mode="chat" title="Standard conversational mode">Chat</button>
@@ -528,6 +843,12 @@
 
                 <textarea id="user-input" rows="1" placeholder="Type a message..."></textarea>
 
+                <button id="internet-toggle-btn" type="button" title="Internet search" aria-label="Internet search" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm7.93 9h-3.09a15.9 15.9 0 00-1.4-5.01A8.03 8.03 0 0119.93 11zM12 4.06c1.18 1.47 2.03 3.86 2.34 6.94H9.66c.31-3.08 1.16-5.47 2.34-6.94zM8.56 5.99A15.9 15.9 0 007.16 11H4.07a8.03 8.03 0 014.49-5.01zM4.07 13h3.09c.2 1.87.72 3.66 1.4 5.01A8.03 8.03 0 014.07 13zM12 19.94c-1.18-1.47-2.03-3.86-2.34-6.94h4.68c-.31 3.08-1.16 5.47-2.34 6.94zm3.44-1.93c.68-1.35 1.2-3.14 1.4-5.01h3.09a8.03 8.03 0 01-4.49 5.01z"></path>
+                    </svg>
+                </button>
+
                 <button id="send-btn" title="Send Payload">
                     <svg viewBox="0 0 24 24">
                         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
@@ -537,24 +858,259 @@
         </div>
     </div>
 
+    <div id="internet-modal-overlay" class="internet-modal-overlay" aria-hidden="true">
+        <div class="internet-modal-card" role="dialog" aria-modal="true" aria-label="Internet search options">
+            <div class="internet-modal-title">Internet search</div>
+            <div class="internet-modal-actions">
+                <button id="internet-option-enabled" class="internet-option-btn" type="button">Internet search Enabled</button>
+                <button id="internet-option-disabled" class="internet-option-btn" type="button">Internet search Disabled</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // DOM Elements
         const chatWindow = document.getElementById('chat-window');
         const userInput = document.getElementById('user-input');
         const sendBtn = document.getElementById('send-btn');
+        const internetToggleBtn = document.getElementById('internet-toggle-btn');
+        const internetModalOverlay = document.getElementById('internet-modal-overlay');
+        const internetOptionEnabled = document.getElementById('internet-option-enabled');
+        const internetOptionDisabled = document.getElementById('internet-option-disabled');
         const modeBtns = document.querySelectorAll('.mode-btn');
         const modeIndicator = document.getElementById('mode-indicator');
         const loadingIndicator = document.getElementById('loading-indicator');
         const loadingText = document.getElementById('loading-text');
         const clearHistoryBtn = document.getElementById('clear-history-btn');
         const exportDebugBtn = document.getElementById('export-debug-btn');
+        const modelToolbar = document.getElementById('model-toolbar');
+        const modelSelector = document.getElementById('model-selector');
+        const modelNote = document.getElementById('model-note');
+        const modelCatalogList = document.getElementById('model-catalog-list');
+        const modelCurrentLabel = document.getElementById('model-current-label');
+        const installModelBtn = document.getElementById('install-model-btn');
+        const refreshModelsBtn = document.getElementById('refresh-models-btn');
+        const toggleModelCatalogBtn = document.getElementById('toggle-model-catalog-btn');
+        const modelInstallStatus = document.getElementById('model-install-status');
 
         // State
         let currentMode = 'chat';
+        let internetSearchEnabled = false;
+        const MODEL_CATALOG = [
+            {
+                name: 'llama3.2:3b',
+                displayName: 'llama3.2:3b',
+                downloadSize: '~2.0 GB',
+                bestUseCase: 'Fast general local model for chat and intent parsing.',
+                strengths: 'Low latency and reliable short instruction following.',
+                limitations: 'Limited deep reasoning and weaker multi-step planning.',
+                hardware: 'CPU-only capable. GPU (4 GB VRAM) recommended.',
+            },
+            {
+                name: 'qwen2.5:3b',
+                displayName: 'qwen2.5:3b',
+                downloadSize: '~1.9 GB',
+                bestUseCase: 'Structured prompts, parser-like extraction, and concise chat.',
+                strengths: 'Good formatting discipline and quick responses.',
+                limitations: 'Can miss edge cases in complex tasks.',
+                hardware: 'CPU-only capable. GPU (4 GB VRAM) recommended.',
+            },
+            {
+                name: 'gemma3:4b',
+                displayName: 'gemma3:4b',
+                downloadSize: '~2.6 GB',
+                bestUseCase: 'Balanced quality for local chat and summarization.',
+                strengths: 'Solid general language quality for its size.',
+                limitations: 'Can be slower than 3B models on CPU.',
+                hardware: 'CPU-only capable but slower. GPU (6 GB VRAM) recommended.',
+            },
+            {
+                name: 'qwen2.5:7b',
+                displayName: 'qwen2.5:7b',
+                downloadSize: '~4.7 GB',
+                bestUseCase: 'Higher-quality instruction following and longer tasks.',
+                strengths: 'Better reasoning consistency than small models.',
+                limitations: 'Higher latency and larger memory footprint.',
+                hardware: 'CPU-only possible but often slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'mistral:7b',
+                displayName: 'mistral:7b',
+                downloadSize: '~4.1 GB',
+                bestUseCase: 'General assistant tasks with stronger text quality.',
+                strengths: 'Good fluency and stable general responses.',
+                limitations: 'Can drift on strict formatting instructions.',
+                hardware: 'CPU-only possible but often slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'llama3.1:8b',
+                displayName: 'llama3.1:8b',
+                downloadSize: '~4.9 GB',
+                bestUseCase: 'Higher-quality general assistant behavior.',
+                strengths: 'Stronger reasoning and better follow-up retention.',
+                limitations: 'Higher VRAM and slower generation on CPU.',
+                hardware: 'CPU-only possible but slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'qwen3:8b',
+                displayName: 'qwen3:8b',
+                downloadSize: '~5.2 GB',
+                bestUseCase: 'Modern multilingual chat and tool-friendly structured responses.',
+                strengths: 'Strong instruction following and broad language coverage.',
+                limitations: 'Heavier than 7B class models.',
+                hardware: 'CPU-only possible but slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'qwen3:30b',
+                displayName: 'qwen3:30b',
+                downloadSize: '~19 GB',
+                bestUseCase: 'Large general-purpose model for deeper reasoning and long-form instruction following.',
+                strengths: 'Strong multilingual quality, better consistency on complex prompts, and stronger planning than 7-8B models.',
+                limitations: 'High memory demand and slower response latency on consumer hardware.',
+                hardware: 'GPU (24 GB VRAM) recommended. CPU-only is usually impractical.',
+            },
+            {
+                name: 'qwen3-vl:30b',
+                displayName: 'qwen3-vl:30b',
+                downloadSize: '~19 GB',
+                bestUseCase: 'Vision-language tasks with image understanding and multimodal reasoning.',
+                strengths: 'Strong OCR, chart reading, and image-grounded instruction following.',
+                limitations: 'High memory usage and slower latency on consumer hardware.',
+                hardware: 'GPU (24 GB VRAM) recommended. CPU-only is usually impractical.',
+            },
+            {
+                name: 'deepseek-r1:7b',
+                displayName: 'deepseek-r1:7b',
+                downloadSize: '~4.8 GB',
+                bestUseCase: 'Reasoning-heavy tasks and step-by-step analysis.',
+                strengths: 'Better logical decomposition than lightweight chat models.',
+                limitations: 'Can be verbose and slower for simple requests.',
+                hardware: 'CPU-only possible but slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'phi4',
+                displayName: 'phi4',
+                downloadSize: '~8.5 GB',
+                bestUseCase: 'Compact high-quality assistant when you need stronger reasoning.',
+                strengths: 'High quality per parameter on structured prompts.',
+                limitations: 'Resource-heavy for CPU-only devices.',
+                hardware: 'GPU (10 GB VRAM) recommended. CPU-only is typically slow.',
+            },
+            {
+                name: 'qwen2.5-coder:7b',
+                displayName: 'qwen2.5-coder:7b',
+                downloadSize: '~4.7 GB',
+                bestUseCase: 'Code generation, refactoring, and script troubleshooting.',
+                strengths: 'Good code-oriented instruction following.',
+                limitations: 'Not ideal as a pure conversational model.',
+                hardware: 'CPU-only possible but slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'qwen3-coder:30b',
+                displayName: 'qwen3-coder:30b',
+                downloadSize: '~19 GB',
+                bestUseCase: 'Large-context coding assistant for complex refactors and codebase-level tasks.',
+                strengths: 'Stronger long-context code reasoning and structured multi-file edits.',
+                limitations: 'Heavy resource demand and slower generations than 7B coder models.',
+                hardware: 'GPU (24 GB VRAM) recommended. CPU-only is usually impractical.',
+            },
+            {
+                name: 'llama3:8b',
+                displayName: 'llama3:8b',
+                downloadSize: '~4.7 GB',
+                bestUseCase: 'General-purpose assistant for balanced quality.',
+                strengths: 'Stable broad-domain responses and good fluency.',
+                limitations: 'Older family compared with latest small models.',
+                hardware: 'CPU-only possible but slow. GPU (8 GB VRAM) recommended.',
+            },
+            {
+                name: 'gemma2:9b',
+                displayName: 'gemma2:9b',
+                downloadSize: '~5.4 GB',
+                bestUseCase: 'Higher quality local assistant with robust summarization.',
+                strengths: 'Strong language quality and consistent outputs.',
+                limitations: 'Higher latency and memory demand.',
+                hardware: 'GPU (10 GB VRAM) recommended. CPU-only is typically slow.',
+            },
+        ];
+        const modelCatalogState = {
+            installedByName: {},
+            entries: [],
+            selectedModel: '',
+            pullInProgress: false,
+            expanded: false,
+            remoteSizeCache: {},
+        };
+
+        function normalizeInstalledModelMap(rawMap) {
+            const normalized = {};
+            if (!rawMap || typeof rawMap !== 'object' || Array.isArray(rawMap)) return normalized;
+            Object.keys(rawMap).forEach((rawKey) => {
+                const key = normalizeModelKey(rawKey);
+                if (!key) return;
+                const info = rawMap[rawKey] || {};
+                const infoName = String((info && info.name) || '').trim();
+                const infoSize = Number(info && info.size ? info.size : 0);
+                normalized[key] = {
+                    name: infoName || rawKey,
+                    size: Number.isFinite(infoSize) && infoSize > 0 ? infoSize : 0,
+                };
+            });
+            return normalized;
+        }
+
+        function mergeInstalledModelMaps(preferredMap, fallbackMap) {
+            const merged = normalizeInstalledModelMap(fallbackMap);
+            const preferred = normalizeInstalledModelMap(preferredMap);
+            Object.keys(preferred).forEach((key) => {
+                merged[key] = preferred[key];
+            });
+            return merged;
+        }
+
+        function isModelInstalled(modelName) {
+            const key = normalizeModelKey(modelName);
+            if (!key) return false;
+            if (modelCatalogState.installedByName && modelCatalogState.installedByName[key]) return true;
+            const matchedEntry = modelCatalogState.entries.find((entry) => normalizeModelKey(entry.name) === key);
+            return !!(matchedEntry && matchedEntry.installed);
+        }
+
+        function markModelInstalledLocally(modelName, installedBytes = 0) {
+            const key = normalizeModelKey(modelName);
+            if (!key) return;
+            const canonicalName = String(modelName || '').trim() || key;
+            const currentMap = normalizeInstalledModelMap(modelCatalogState.installedByName);
+            const existing = currentMap[key] || {};
+            const size = Number(installedBytes);
+
+            currentMap[key] = {
+                name: String(existing.name || canonicalName),
+                size: Number.isFinite(size) && size > 0 ? size : Number(existing.size || 0),
+            };
+
+            modelCatalogState.installedByName = currentMap;
+            try {
+                localStorage.setItem('axiomInstalledModelCache', JSON.stringify(currentMap));
+            } catch {
+                // Local cache write is best-effort.
+            }
+
+            modelCatalogState.entries.forEach((entry) => {
+                if (normalizeModelKey(entry.name) !== key) return;
+                entry.installed = true;
+                entry.installedName = currentMap[key].name;
+                entry.installedBytes = currentMap[key].size;
+            });
+        }
         // Use the dedicated production webhook path for autonomous operation.
         const webhookUrls = [
             "http://127.0.0.1:5678/webhook/axiom-router-exec",
             "http://127.0.0.1:5678/webhook-test/axiom-router-exec"
+        ];
+        const modelBridgeUrls = [
+            "http://127.0.0.1:3055",
+            "http://localhost:3055"
         ];
         const safeLoadJson = (key, fallback) => {
             try {
@@ -575,6 +1131,7 @@
             lastToolAction: '',
             pendingClarify: false,
             pendingMode: '',
+            modelName: 'llama3.2',
             updatedAt: '',
         });
         if (!contextState || typeof contextState !== 'object') {
@@ -584,8 +1141,868 @@
                 lastToolAction: '',
                 pendingClarify: false,
                 pendingMode: '',
+                modelName: 'llama3.2',
                 updatedAt: '',
             };
+        }
+
+        function normalizeModelKey(name) {
+            const raw = String(name || '').trim().toLowerCase();
+            if (!raw) return '';
+            return raw.endsWith(':latest') ? raw.replace(/:latest$/i, '') : raw;
+        }
+
+        function formatByteSize(bytes) {
+            const value = Number(bytes);
+            if (!Number.isFinite(value) || value <= 0) return '';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let scaled = value;
+            let idx = 0;
+            while (scaled >= 1024 && idx < units.length - 1) {
+                scaled /= 1024;
+                idx += 1;
+            }
+            const decimals = scaled >= 10 || idx === 0 ? 0 : 1;
+            return `${scaled.toFixed(decimals)} ${units[idx]}`;
+        }
+
+        function setModelInstallStatus(message, tone = 'info') {
+            if (!modelInstallStatus) return;
+            modelInstallStatus.textContent = String(message || '');
+            if (tone === 'error') {
+                modelInstallStatus.style.color = '#ff6b6b';
+            } else if (tone === 'success') {
+                modelInstallStatus.style.color = '#28c76f';
+            } else if (tone === 'warn') {
+                modelInstallStatus.style.color = '#ffbf4d';
+            } else {
+                modelInstallStatus.style.color = 'var(--text-secondary)';
+            }
+        }
+
+        function setInternetSearchEnabled(enabled, persistSelection = true) {
+            internetSearchEnabled = !!enabled;
+            if (internetToggleBtn) {
+                internetToggleBtn.classList.toggle('active', internetSearchEnabled);
+                internetToggleBtn.setAttribute('aria-pressed', internetSearchEnabled ? 'true' : 'false');
+            }
+            if (persistSelection) {
+                localStorage.setItem('axiomInternetSearchEnabled', internetSearchEnabled ? '1' : '0');
+            }
+        }
+
+        function setInternetModalOpen(open) {
+            if (!internetModalOverlay) return;
+            const isOpen = !!open;
+            internetModalOverlay.classList.toggle('active', isOpen);
+            internetModalOverlay.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+        }
+
+        function likelyNeedsInternetSearch(text, mode) {
+            if (mode !== 'chat') return false;
+            const lower = String(text || '').toLowerCase();
+            if (!lower.trim()) return false;
+            return (
+                /\b(check|search|look\s*up|find|verify|compare)\b[\s\S]*\b(net|internet|online|web|news|latest|current)\b/.test(lower) ||
+                /\b(net|internet|online|web)\b/.test(lower) ||
+                /\b(latest|today|current|real[-\s]?time|up[-\s]?to[-\s]?date)\b/.test(lower) ||
+                /\b(news|headline|price|stock|weather|forecast|score|results|trend|market)\b/.test(lower)
+            );
+        }
+
+        function buildModelCatalogEntries(installedByName, onlineModelNames = []) {
+            const catalogByKey = {};
+            for (const item of MODEL_CATALOG) {
+                const key = normalizeModelKey(item.name);
+                if (!key) continue;
+                catalogByKey[key] = {
+                    ...item,
+                    source: 'curated',
+                    installed: false,
+                    installedName: '',
+                    installedBytes: 0,
+                };
+            }
+
+            for (const onlineNameRaw of onlineModelNames) {
+                const onlineName = String(onlineNameRaw || '').trim();
+                const key = normalizeModelKey(onlineName);
+                if (!key) continue;
+                if (!catalogByKey[key]) {
+                    const canonicalName = onlineName.includes(':') ? onlineName : `${onlineName}:latest`;
+                    catalogByKey[key] = {
+                        name: canonicalName,
+                        displayName: canonicalName,
+                        downloadSize: 'unknown',
+                        bestUseCase: 'Model discovered from the Ollama online library.',
+                        strengths: 'Installable from the registry for local use.',
+                        limitations: 'Profile and exact size depend on the selected tag.',
+                        hardware: 'Hardware requirements vary by tag. Review model details before install.',
+                        source: 'online',
+                        installed: false,
+                        installedName: '',
+                        installedBytes: 0,
+                    };
+                }
+            }
+
+            for (const key of Object.keys(installedByName || {})) {
+                const installedInfo = installedByName[key] || {};
+                if (catalogByKey[key]) {
+                    catalogByKey[key].installed = true;
+                    catalogByKey[key].installedName = String(installedInfo.name || catalogByKey[key].name);
+                    catalogByKey[key].installedBytes = Number(installedInfo.size || 0);
+                } else {
+                    const discoveredName = String(installedInfo.name || key);
+                    catalogByKey[key] = {
+                        name: discoveredName,
+                        displayName: discoveredName,
+                        downloadSize: '',
+                        bestUseCase: 'Installed local model discovered from Ollama.',
+                        strengths: 'Available immediately for local generation.',
+                        limitations: 'No curated profile yet. Behavior depends on model family.',
+                        hardware: 'Hardware guidance unavailable for this model.',
+                        source: 'installed',
+                        installed: true,
+                        installedName: discoveredName,
+                        installedBytes: Number(installedInfo.size || 0),
+                    };
+                }
+            }
+
+            return Object.values(catalogByKey).sort((a, b) => {
+                const aInstalled = a.installed ? 1 : 0;
+                const bInstalled = b.installed ? 1 : 0;
+                if (aInstalled !== bInstalled) return bInstalled - aInstalled;
+                const aSourceRank = a.source === 'curated' ? 0 : 1;
+                const bSourceRank = b.source === 'curated' ? 0 : 1;
+                if (aSourceRank !== bSourceRank) return aSourceRank - bSourceRank;
+                return String(a.displayName || a.name).localeCompare(String(b.displayName || b.name));
+            });
+        }
+
+        function refreshModelSelectorOptions(entries) {
+            if (!modelSelector) return;
+            modelSelector.innerHTML = '';
+            entries.forEach((entry) => {
+                const option = document.createElement('option');
+                option.value = entry.name;
+                option.textContent = entry.displayName || entry.name;
+                modelSelector.appendChild(option);
+            });
+        }
+
+        function updateModelNote(entry) {
+            if (!modelNote) return;
+            if (!entry) {
+                modelNote.textContent = 'No model selected.';
+                return;
+            }
+            const installed = isModelInstalled(entry.name);
+            const installedMeta = modelCatalogState.installedByName
+                ? modelCatalogState.installedByName[normalizeModelKey(entry.name)]
+                : null;
+            const installedBytes = Number(installedMeta && installedMeta.size ? installedMeta.size : entry.installedBytes || 0);
+            const installInfo = installed
+                ? `Installed locally${installedBytes ? ` (${formatByteSize(installedBytes)})` : ''}.`
+                : `Not installed. Download size: ${entry.downloadSize || 'unknown'}${(!entry.downloadSize || entry.downloadSize === 'unknown') ? ' (resolved during install when available).' : '.'}`;
+            modelNote.textContent = `${entry.bestUseCase} ${entry.strengths} ${entry.limitations} ${entry.hardware} ${installInfo}`;
+        }
+
+        function setModelCatalogExpanded(expanded, persistState = true) {
+            modelCatalogState.expanded = !!expanded;
+            if (modelToolbar) {
+                if (modelCatalogState.expanded) {
+                    modelToolbar.classList.remove('collapsed');
+                } else {
+                    modelToolbar.classList.add('collapsed');
+                }
+            }
+            if (toggleModelCatalogBtn) {
+                toggleModelCatalogBtn.textContent = modelCatalogState.expanded ? 'Collapse' : 'Expand';
+            }
+            if (persistState) {
+                localStorage.setItem('axiomModelCatalogExpanded', modelCatalogState.expanded ? '1' : '0');
+            }
+        }
+
+        function updateInstallButtonState() {
+            if (!installModelBtn) return;
+            const selectedEntry = modelCatalogState.entries.find((entry) => entry.name === modelCatalogState.selectedModel);
+            const installed = !!(selectedEntry && isModelInstalled(selectedEntry.name));
+            installModelBtn.disabled = modelCatalogState.pullInProgress || !selectedEntry || installed;
+            if (modelCatalogState.pullInProgress) {
+                installModelBtn.textContent = 'Installing...';
+            } else if (installed) {
+                installModelBtn.textContent = 'Installed';
+            } else {
+                installModelBtn.textContent = 'Install Selected';
+            }
+        }
+
+        function renderModelCatalog(entries, selectedModel) {
+            if (!modelCatalogList) return;
+            modelCatalogList.innerHTML = '';
+            const curated = entries.filter((entry) => entry.source === 'curated');
+            const discovered = entries.filter((entry) => entry.source !== 'curated');
+
+            const appendSection = (title, list, minimal = false) => {
+                if (!list.length) return;
+                const section = document.createElement('div');
+                section.className = 'model-section';
+
+                const sectionTitle = document.createElement('div');
+                sectionTitle.className = 'model-section-title';
+                sectionTitle.textContent = title;
+                section.appendChild(sectionTitle);
+
+                list.forEach((entry) => {
+                    const card = document.createElement('div');
+                    card.className = `model-entry${entry.name === selectedModel ? ' active' : ''}${minimal ? ' minimal' : ''}`;
+
+                    const header = document.createElement('div');
+                    header.className = 'model-entry-header';
+
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'model-entry-name';
+                    nameEl.textContent = entry.displayName || entry.name;
+
+                    const tags = document.createElement('div');
+                    tags.className = 'model-entry-tags';
+
+                    const statusChip = document.createElement('span');
+                    statusChip.className = `model-chip ${entry.installed ? 'installed' : 'not-installed'}`;
+                    statusChip.textContent = entry.installed ? 'Installed' : 'Not installed';
+                    tags.appendChild(statusChip);
+
+                    const sizeChip = document.createElement('span');
+                    sizeChip.className = 'model-chip';
+                    sizeChip.textContent = entry.installed
+                        ? `Local size: ${formatByteSize(entry.installedBytes) || 'unknown'}`
+                        : `Download: ${entry.downloadSize || 'unknown'}`;
+                    tags.appendChild(sizeChip);
+
+                    header.appendChild(nameEl);
+                    header.appendChild(tags);
+                    card.appendChild(header);
+
+                    if (!minimal) {
+                        const best = document.createElement('div');
+                        best.className = 'model-entry-text';
+                        best.textContent = `Best use case: ${entry.bestUseCase}`;
+
+                        const strengths = document.createElement('div');
+                        strengths.className = 'model-entry-text';
+                        strengths.textContent = `Strengths: ${entry.strengths}`;
+
+                        const limits = document.createElement('div');
+                        limits.className = 'model-entry-text';
+                        limits.textContent = `Limitations: ${entry.limitations}`;
+
+                        const hardware = document.createElement('div');
+                        hardware.className = 'model-entry-text';
+                        hardware.textContent = `Hardware: ${entry.hardware}`;
+
+                        card.appendChild(best);
+                        card.appendChild(strengths);
+                        card.appendChild(limits);
+                        card.appendChild(hardware);
+                    } else {
+                        const minimalInfo = document.createElement('div');
+                        minimalInfo.className = 'model-entry-text';
+                        minimalInfo.textContent = 'Details unavailable from registry snapshot.';
+                        card.appendChild(minimalInfo);
+
+                        const actions = document.createElement('div');
+                        actions.className = 'model-row-actions';
+
+                        const fetchBtn = document.createElement('button');
+                        fetchBtn.className = 'model-mini-btn';
+                        fetchBtn.type = 'button';
+                        fetchBtn.textContent = 'Fetch details';
+                        fetchBtn.addEventListener('click', async (event) => {
+                            event.stopPropagation();
+                            setModelInstallStatus(`Fetching details for ${entry.displayName || entry.name}...`);
+                            const resolvedSize = await resolveRemoteDownloadSize(entry.name);
+                            if (resolvedSize && resolvedSize !== 'unknown') {
+                                entry.downloadSize = resolvedSize;
+                                renderModelCatalog(modelCatalogState.entries, modelCatalogState.selectedModel);
+                                if (modelCatalogState.selectedModel === entry.name) {
+                                    updateModelNote(entry);
+                                }
+                                setModelInstallStatus(`Fetched details for ${entry.displayName || entry.name}.`, 'success');
+                            } else {
+                                setModelInstallStatus(`Details unavailable for ${entry.displayName || entry.name}.`, 'warn');
+                            }
+                        });
+                        actions.appendChild(fetchBtn);
+
+                        const openBtn = document.createElement('button');
+                        openBtn.className = 'model-mini-btn';
+                        openBtn.type = 'button';
+                        openBtn.textContent = 'Open page';
+                        openBtn.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            const base = String(entry.name || '').split(':')[0];
+                            window.open(`https://ollama.com/library/${base}`, '_blank');
+                        });
+                        actions.appendChild(openBtn);
+                        card.appendChild(actions);
+                    }
+
+                    card.addEventListener('click', () => {
+                        setSelectedModel(entry.name, true);
+                    });
+
+                    section.appendChild(card);
+                });
+
+                modelCatalogList.appendChild(section);
+            };
+
+            appendSection(`Tier 1: Curated (${curated.length})`, curated, false);
+            appendSection(`Tier 2: Online/Discovered (${discovered.length})`, discovered, true);
+        }
+
+        function setSelectedModel(modelName, persistSelection = true) {
+            const requestedKey = normalizeModelKey(modelName);
+            const selectedEntry =
+                modelCatalogState.entries.find((entry) => entry.name === modelName) ||
+                modelCatalogState.entries.find((entry) => normalizeModelKey(entry.name) === requestedKey);
+            const selected = selectedEntry
+                ? selectedEntry.name
+                : (modelCatalogState.entries[0] ? modelCatalogState.entries[0].name : 'llama3.2');
+            modelCatalogState.selectedModel = selected;
+
+            if (modelSelector) modelSelector.value = selected;
+            contextState.modelName = selected;
+            contextState.updatedAt = new Date().toISOString();
+
+            if (persistSelection) {
+                localStorage.setItem('axiomSelectedModel', selected);
+                persistContextState();
+            }
+
+            const resolvedEntry = modelCatalogState.entries.find((entry) => entry.name === selected);
+            if (modelCurrentLabel) {
+                const status = isModelInstalled(selected) ? 'installed' : 'not installed';
+                modelCurrentLabel.textContent = `Current: ${resolvedEntry ? (resolvedEntry.displayName || resolvedEntry.name) : selected} (${status})`;
+            }
+            updateModelNote(resolvedEntry);
+            renderModelCatalog(modelCatalogState.entries, selected);
+            updateInstallButtonState();
+        }
+
+        async function fetchInstalledModels() {
+            let lastError = null;
+
+            try {
+                const bridgeResponse = await callModelBridge('/api/models/installed', {
+                    method: 'GET',
+                    timeoutMs: 15000,
+                });
+                const bridgeData = bridgeResponse && bridgeResponse.data ? bridgeResponse.data : {};
+                const bridgeMap = normalizeInstalledModelMap(bridgeData.installedByName);
+                if (Object.keys(bridgeMap).length) {
+                    localStorage.setItem('axiomInstalledModelCache', JSON.stringify(bridgeMap));
+                    return bridgeMap;
+                }
+
+                const bridgeModels = Array.isArray(bridgeData.models) ? bridgeData.models : [];
+                if (bridgeModels.length) {
+                    const discovered = {};
+                    bridgeModels.forEach((model) => {
+                        const name = String(model && model.name ? model.name : '').trim();
+                        const fallbackName = String(model && model.key ? model.key : '').trim();
+                        const key = normalizeModelKey(name || fallbackName);
+                        if (!key) return;
+                        const size = Number(model && model.size ? model.size : 0);
+                        discovered[key] = {
+                            name: name || key,
+                            size: Number.isFinite(size) && size > 0 ? size : 0,
+                        };
+                    });
+                    const normalized = normalizeInstalledModelMap(discovered);
+                    if (Object.keys(normalized).length) {
+                        localStorage.setItem('axiomInstalledModelCache', JSON.stringify(normalized));
+                        return normalized;
+                    }
+                }
+            } catch (error) {
+                lastError = error;
+            }
+
+            const installedByName = {};
+            const endpoints = [
+                'http://127.0.0.1:11434/api/tags',
+                'http://localhost:11434/api/tags',
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'GET',
+                        headers: { Accept: 'application/json' },
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Ollama API returned ${response.status} at ${endpoint}.`);
+                    }
+                    const data = await response.json();
+                    const models = Array.isArray(data && data.models) ? data.models : [];
+                    for (const model of models) {
+                        const name = String(model && model.name ? model.name : '').trim();
+                        const key = normalizeModelKey(name);
+                        if (!key) continue;
+                        const size = Number(model && model.size ? model.size : 0);
+                        installedByName[key] = {
+                            name,
+                            size: Number.isFinite(size) && size > 0 ? size : 0,
+                        };
+                    }
+                    const normalized = normalizeInstalledModelMap(installedByName);
+                    localStorage.setItem('axiomInstalledModelCache', JSON.stringify(normalized));
+                    return normalized;
+                } catch (error) {
+                    lastError = error;
+                }
+            }
+
+            throw lastError || new Error('Failed to fetch Ollama installed model list.');
+        }
+
+        function parseOnlineModelNames(rawText) {
+            const text = String(rawText || '');
+            const names = new Set();
+            const patterns = [
+                /\/library\/([a-z0-9][a-z0-9._-]*)/gi,
+                /\(https?:\/\/ollama\.com\/library\/([a-z0-9][a-z0-9._-]*)\)/gi,
+            ];
+            for (const regex of patterns) {
+                let match;
+                while ((match = regex.exec(text)) !== null) {
+                    const name = String(match[1] || '').trim().toLowerCase();
+                    if (!name || name === 'library') continue;
+                    names.add(name);
+                }
+            }
+            return Array.from(names).slice(0, 240);
+        }
+
+        async function fetchOnlineModelNames() {
+            const endpoints = [
+                'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://ollama.com/library'),
+                'https://r.jina.ai/http://ollama.com/library',
+            ];
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, { method: 'GET' });
+                    if (!response.ok) continue;
+                    const text = await response.text();
+                    const names = parseOnlineModelNames(text);
+                    if (names.length) return names;
+                } catch {
+                    // Try next endpoint
+                }
+            }
+            return [];
+        }
+
+        async function resolveRemoteDownloadSize(modelName) {
+            const raw = String(modelName || '').trim();
+            if (!raw) return 'unknown';
+            if (modelCatalogState.remoteSizeCache[raw]) return modelCatalogState.remoteSizeCache[raw];
+
+            const base = raw.split(':')[0];
+            const endpoints = [
+                'https://api.allorigins.win/raw?url=' + encodeURIComponent(`https://ollama.com/library/${base}`),
+                `https://r.jina.ai/http://ollama.com/library/${base}`,
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint, { method: 'GET' });
+                    if (!response.ok) continue;
+                    const text = await response.text();
+                    const matches = String(text).match(/\b\d+(?:\.\d+)?\s*(?:TB|GB|MB)\b/gi) || [];
+                    if (matches.length) {
+                        const size = String(matches[0]).toUpperCase().replace(/\s+/g, ' ');
+                        modelCatalogState.remoteSizeCache[raw] = `~${size}`;
+                        return modelCatalogState.remoteSizeCache[raw];
+                    }
+                } catch {
+                    // Try next endpoint
+                }
+            }
+
+            modelCatalogState.remoteSizeCache[raw] = 'unknown';
+            return 'unknown';
+        }
+
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+        function buildModelInstallReporter(modelName) {
+            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const initialText = `Installing model ${modelName} via local engine...\nProgress: 0%`;
+            const msgDiv = appendMessage('agent', initialText, timestamp);
+            let lastPercent = 0;
+            let lastStatus = '';
+            let lastMessage = '';
+            let lastRenderAt = 0;
+
+            return {
+                update(state, force = false) {
+                    const now = Date.now();
+                    const status = String(state && state.status ? state.status : '').toLowerCase();
+                    const rawPercent = Number(state && state.progressPercent);
+                    const progressPercent = Number.isFinite(rawPercent) ? Math.max(0, Math.min(100, Math.round(rawPercent))) : null;
+                    const latestMessage = String((state && (state.latestMessage || state.message)) || '').trim();
+
+                    const shouldRender =
+                        force ||
+                        progressPercent === null ||
+                        progressPercent >= lastPercent + 2 ||
+                        status !== lastStatus ||
+                        latestMessage !== lastMessage ||
+                        now - lastRenderAt > 3000;
+
+                    if (!shouldRender) return;
+
+                    if (progressPercent !== null) lastPercent = Math.max(lastPercent, progressPercent);
+                    if (status) lastStatus = status;
+                    if (latestMessage) lastMessage = latestMessage;
+                    lastRenderAt = now;
+
+                    const statusLine = status ? `Status: ${status}` : 'Status: running';
+                    const progressLine = progressPercent !== null ? `Progress: ${progressPercent}%` : 'Progress: calculating...';
+                    const detailsLine = latestMessage ? `Detail: ${latestMessage}` : '';
+                    const text = [statusLine, progressLine, detailsLine].filter(Boolean).join('\n');
+                    updateMessageText(msgDiv, text);
+                },
+                finish(finalText, isError = false) {
+                    const text = String(finalText || '');
+                    updateMessageText(msgDiv, text);
+                    saveToHistory('agent', text, timestamp, [], { modelInstall: { modelName, error: !!isError } });
+                },
+            };
+        }
+
+        async function callModelBridge(route, options = {}) {
+            const method = String(options.method || 'GET').toUpperCase();
+            const body = options.body === undefined ? undefined : options.body;
+            const timeoutMs = Number(options.timeoutMs || 12000);
+            const preferred = String(options.preferredBaseUrl || '').trim();
+            const bases = preferred
+                ? [preferred, ...modelBridgeUrls.filter((u) => String(u || '').trim() !== preferred)]
+                : modelBridgeUrls.slice();
+            let lastError = null;
+
+            for (const baseUrl of bases) {
+                const url = `${baseUrl}${route}`;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const response = await fetch(url, {
+                        method,
+                        headers: {
+                            Accept: 'application/json',
+                            ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+                        },
+                        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+                        signal: controller.signal,
+                    });
+                    const raw = await response.text();
+                    let data = {};
+                    try {
+                        data = raw ? JSON.parse(raw) : {};
+                    } catch {
+                        data = { raw };
+                    }
+                    if (!response.ok) {
+                        const err = String((data && (data.error || data.message)) || raw || `HTTP ${response.status}`);
+                        throw new Error(`${err} (${url})`);
+                    }
+                    return { baseUrl, data };
+                } catch (error) {
+                    lastError = error;
+                } finally {
+                    clearTimeout(timer);
+                }
+            }
+
+            throw (lastError || new Error('Model bridge is unavailable.'));
+        }
+
+        async function installModelViaBackend(modelName, onProgress) {
+            const started = await callModelBridge('/api/models/install', {
+                method: 'POST',
+                body: { name: modelName },
+                timeoutMs: 20000,
+            });
+            const baseUrl = started.baseUrl;
+            let state = (started.data && typeof started.data === 'object') ? started.data : {};
+            const jobId = String(state.jobId || state.id || '').trim();
+            if (!jobId) {
+                throw new Error('Model bridge did not return a job ID.');
+            }
+
+            const deadline = Date.now() + 1000 * 60 * 120;
+            while (Date.now() < deadline) {
+                const status = String(state.status || '').toLowerCase();
+                const progressPercent = Number(state.progressPercent);
+                if (typeof onProgress === 'function') {
+                    onProgress({
+                        status,
+                        progressPercent: Number.isFinite(progressPercent) ? progressPercent : null,
+                        latestMessage: String(state.latestMessage || state.message || ''),
+                    });
+                }
+
+                if (status === 'success' || status === 'completed') return state;
+                if (status === 'error' || status === 'failed' || status === 'cancelled') {
+                    throw new Error(String(state.error || state.latestMessage || `Model install failed for ${modelName}.`));
+                }
+
+                await sleep(1200);
+                const poll = await callModelBridge(`/api/models/install/${encodeURIComponent(jobId)}`, {
+                    method: 'GET',
+                    preferredBaseUrl: baseUrl,
+                    timeoutMs: 12000,
+                });
+                state = (poll.data && typeof poll.data === 'object') ? poll.data : {};
+            }
+
+            throw new Error(`Model install timed out for ${modelName}.`);
+        }
+
+        async function refreshModelCatalog(preferredModel) {
+            if (refreshModelsBtn) refreshModelsBtn.disabled = true;
+            setModelInstallStatus('Refreshing model catalog...');
+            try {
+                let installedFetchFailed = false;
+                let installedErrorMessage = '';
+                try {
+                    const fetchedInstalled = normalizeInstalledModelMap(await fetchInstalledModels());
+                    modelCatalogState.installedByName = mergeInstalledModelMaps(
+                        fetchedInstalled,
+                        modelCatalogState.installedByName
+                    );
+                } catch (error) {
+                    installedFetchFailed = true;
+                    installedErrorMessage = String(error && error.message ? error.message : 'Failed to fetch');
+                    const cachedInstalled = normalizeInstalledModelMap(safeLoadJson('axiomInstalledModelCache', {}));
+                    modelCatalogState.installedByName = mergeInstalledModelMaps(
+                        modelCatalogState.installedByName,
+                        cachedInstalled
+                    );
+                }
+
+                let onlineModelNames = [];
+                try {
+                    onlineModelNames = await fetchOnlineModelNames();
+                } catch {
+                    onlineModelNames = [];
+                }
+
+                modelCatalogState.entries = buildModelCatalogEntries(modelCatalogState.installedByName, onlineModelNames);
+                refreshModelSelectorOptions(modelCatalogState.entries);
+
+                const wantedModel = String(
+                    preferredModel ||
+                    modelCatalogState.selectedModel ||
+                    contextState.modelName ||
+                    localStorage.getItem('axiomSelectedModel') ||
+                    'llama3.2'
+                ).trim();
+                setSelectedModel(wantedModel, true);
+                const installedCount = Object.keys(modelCatalogState.installedByName || {}).length;
+                const totalCount = modelCatalogState.entries.length;
+                const onlineOnlyCount = modelCatalogState.entries.filter((entry) => entry.source === 'online' && !entry.installed).length;
+
+                if (installedFetchFailed) {
+                    setModelInstallStatus(
+                        `Live installed-model check unavailable (${installedErrorMessage}). Using cached/local snapshot. Showing ${totalCount} catalog entries (${onlineOnlyCount} online-discovered).`,
+                        'warn'
+                    );
+                } else {
+                    setModelInstallStatus(`Model catalog refreshed. Installed: ${installedCount}, total options: ${totalCount}.`, 'success');
+                }
+            } finally {
+                if (refreshModelsBtn) refreshModelsBtn.disabled = false;
+            }
+        }
+
+        async function installSelectedModel() {
+            const selectedEntry = modelCatalogState.entries.find((entry) => entry.name === modelCatalogState.selectedModel);
+            if (!selectedEntry) return;
+            if (selectedEntry.installed) {
+                setModelInstallStatus('Selected model is already installed.', 'success');
+                updateInstallButtonState();
+                return;
+            }
+            if (modelCatalogState.pullInProgress) return;
+
+            if (!selectedEntry.downloadSize || selectedEntry.downloadSize === 'unknown') {
+                const resolvedSize = await resolveRemoteDownloadSize(selectedEntry.name);
+                if (resolvedSize && resolvedSize !== 'unknown') {
+                    selectedEntry.downloadSize = resolvedSize;
+                    renderModelCatalog(modelCatalogState.entries, modelCatalogState.selectedModel);
+                    updateModelNote(selectedEntry);
+                }
+            }
+
+            const confirmMessage =
+                `Install model ${selectedEntry.displayName || selectedEntry.name} now?\n\n` +
+                `Download size: ${selectedEntry.downloadSize || 'unknown'}\n` +
+                `${selectedEntry.hardware}`;
+            if (!window.confirm(confirmMessage)) {
+                setModelInstallStatus('Model install cancelled.', 'warn');
+                return;
+            }
+
+            modelCatalogState.pullInProgress = true;
+            updateInstallButtonState();
+            setModelInstallStatus(
+                `Downloading ${selectedEntry.displayName || selectedEntry.name} (${selectedEntry.downloadSize || 'size unknown'})...`,
+                'info'
+            );
+            const reporter = buildModelInstallReporter(selectedEntry.displayName || selectedEntry.name);
+
+            try {
+                let bodyText = '';
+                let installedByBackend = false;
+
+                try {
+                    saveDebugTrace('model_install_backend_start', { modelName: selectedEntry.name });
+                    await installModelViaBackend(selectedEntry.name, (state) => reporter.update(state));
+                    reporter.update({
+                        status: 'success',
+                        progressPercent: 100,
+                        latestMessage: 'Model download finished.',
+                    }, true);
+                    saveDebugTrace('model_install_backend_success', { modelName: selectedEntry.name });
+                    installedByBackend = true;
+                } catch (backendError) {
+                    const backendMessage = String(backendError && backendError.message ? backendError.message : 'backend_install_failed');
+                    saveDebugTrace('model_install_backend_error', {
+                        modelName: selectedEntry.name,
+                        message: backendMessage,
+                    });
+                    reporter.update({
+                        status: 'fallback',
+                        progressPercent: null,
+                        latestMessage: `Backend install unavailable (${backendMessage}). Trying direct install fallback...`,
+                    }, true);
+                }
+
+                if (!installedByBackend) {
+                    const endpoints = [
+                        'http://127.0.0.1:11434/api/pull',
+                        'http://localhost:11434/api/pull',
+                    ];
+                    let ok = false;
+                    let lastError = null;
+
+                    for (const endpoint of endpoints) {
+                        try {
+                            const response = await fetch(endpoint, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                                body: JSON.stringify({
+                                    name: selectedEntry.name,
+                                    stream: false,
+                                }),
+                            });
+                            bodyText = await response.text();
+                            if (!response.ok) {
+                                throw new Error(`Install failed with HTTP ${response.status} at ${endpoint}. ${bodyText || ''}`.trim());
+                            }
+                            ok = true;
+                            break;
+                        } catch (error) {
+                            lastError = error;
+                        }
+                    }
+
+                    if (!ok) throw (lastError || new Error('Install failed for unknown reason.'));
+                }
+
+                saveDebugTrace('model_install_success', {
+                    modelName: selectedEntry.name,
+                    response: String(bodyText || '').slice(0, 2000),
+                });
+                markModelInstalledLocally(selectedEntry.name);
+                renderModelCatalog(modelCatalogState.entries, modelCatalogState.selectedModel);
+                updateModelNote(selectedEntry);
+                updateInstallButtonState();
+                setModelInstallStatus(`Installed ${selectedEntry.displayName || selectedEntry.name}.`, 'success');
+                reporter.finish(`Installed ${selectedEntry.displayName || selectedEntry.name}.`, false);
+                try {
+                    await refreshModelCatalog(selectedEntry.name);
+                } catch (refreshError) {
+                    const refreshMessage = String(
+                        refreshError && refreshError.message ? refreshError.message : 'unknown refresh failure'
+                    );
+                    saveDebugTrace('model_catalog_refresh_after_install_error', {
+                        modelName: selectedEntry.name,
+                        message: refreshMessage,
+                    });
+                    setModelInstallStatus(
+                        `Installed ${selectedEntry.displayName || selectedEntry.name}, but catalog refresh failed: ${refreshMessage}`,
+                        'warn'
+                    );
+                }
+            } catch (error) {
+                const rawMessage = String(error && error.message ? error.message : 'Unknown error');
+                const isFetchFailure = /failed to fetch|networkerror|load failed/i.test(rawMessage);
+                const originLabel = (() => {
+                    try {
+                        return String(window.location && window.location.origin ? window.location.origin : 'unknown_origin');
+                    } catch {
+                        return 'unknown_origin';
+                    }
+                })();
+                const fallbackHint = isFetchFailure
+                    ? `Browser could not reach Ollama API from origin ${originLabel}. This is usually local-origin/CORS policy. Try: set OLLAMA_ORIGINS=* and restart Ollama, or run in terminal: ollama pull ${selectedEntry.name}`
+                    : '';
+                saveDebugTrace('model_install_error', {
+                    modelName: selectedEntry.name,
+                    message: rawMessage,
+                    hint: fallbackHint,
+                });
+                setModelInstallStatus(
+                    `Install failed for ${selectedEntry.displayName || selectedEntry.name}: ${rawMessage}${fallbackHint ? ` | ${fallbackHint}` : ''}`,
+                    'error'
+                );
+                reporter.finish(`Install failed for ${selectedEntry.displayName || selectedEntry.name}: ${rawMessage}`, true);
+            } finally {
+                modelCatalogState.pullInProgress = false;
+                updateInstallButtonState();
+            }
+        }
+
+        async function initializeModelSelection() {
+            if (!modelSelector) return;
+            const expandedSetting = localStorage.getItem('axiomModelCatalogExpanded');
+            setModelCatalogExpanded(expandedSetting === '1', false);
+            modelSelector.addEventListener('change', () => {
+                setSelectedModel(String(modelSelector.value || 'llama3.2').trim() || 'llama3.2', true);
+            });
+            if (installModelBtn) {
+                installModelBtn.addEventListener('click', () => {
+                    installSelectedModel();
+                });
+            }
+            if (refreshModelsBtn) {
+                refreshModelsBtn.addEventListener('click', () => {
+                    refreshModelCatalog(modelCatalogState.selectedModel || contextState.modelName);
+                });
+            }
+            if (toggleModelCatalogBtn) {
+                toggleModelCatalogBtn.addEventListener('click', () => {
+                    setModelCatalogExpanded(!modelCatalogState.expanded, true);
+                });
+            }
+            await refreshModelCatalog(contextState.modelName || localStorage.getItem('axiomSelectedModel') || 'llama3.2');
         }
 
         // Auto-resize textarea
@@ -626,6 +2043,25 @@
             });
         });
 
+        function renderMessageParagraphs(container, text) {
+            if (!container) return;
+            container.innerHTML = '';
+            const paragraphs = String(text || '').split('\n').filter(p => p.trim() !== '');
+            paragraphs.forEach(p => {
+                const pTag = document.createElement('p');
+                pTag.textContent = p;
+                container.appendChild(pTag);
+            });
+        }
+
+        function updateMessageText(messageDiv, text) {
+            if (!messageDiv) return;
+            const contentDiv = messageDiv.querySelector('.message-content');
+            if (!contentDiv) return;
+            renderMessageParagraphs(contentDiv, text);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
         // Appending Messages to UI
         function appendMessage(sender, text, timestamp = null, steps = []) {
             if (!timestamp) timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -635,7 +2071,7 @@
 
             const metaDiv = document.createElement('div');
             metaDiv.className = 'message-meta';
-            const senderName = sender === 'user' ? 'You' : 'OpenClaw';
+            const senderName = sender === 'user' ? 'You' : 'Axiom Agent';
             metaDiv.textContent = `${senderName} — ${timestamp}`;
             msgDiv.appendChild(metaDiv);
 
@@ -652,18 +2088,48 @@
                 });
             }
 
-            const paragraphs = text.split('\n').filter(p => p.trim() !== '');
-            paragraphs.forEach(p => {
-                const pTag = document.createElement('p');
-                pTag.textContent = p;
-                contentDiv.appendChild(pTag);
-            });
+            renderMessageParagraphs(contentDiv, text);
 
             msgDiv.appendChild(contentDiv);
             chatWindow.appendChild(msgDiv);
             chatWindow.scrollTop = chatWindow.scrollHeight;
 
             return msgDiv;
+        }
+
+        function handleDeleteConfirmationPrompt(replyText, mode) {
+            if (mode !== 'tool') return false;
+            if (!/Delete is destructive\./i.test(String(replyText || ''))) return false;
+
+            const text = String(replyText || '');
+            const targetMatch =
+                text.match(/file:\s*([A-Za-z]:[\\/][^\n\r]+)/i) ||
+                text.match(/delete\s+([A-Za-z]:[\\/][^\n\r]+)\.?/i) ||
+                text.match(/([A-Za-z]:[\\/][^\n\r]+)/);
+            const targetPath = targetMatch && targetMatch[1]
+                ? String(targetMatch[1]).trim().replace(/\.$/, '')
+                : '';
+
+            setTimeout(() => {
+                const message = targetPath
+                    ? `Delete this file permanently?\n\n${targetPath}`
+                    : 'Delete this file permanently?';
+                const ok = window.confirm(message);
+                if (ok) {
+                    const confirmText = targetPath
+                        ? `confirm delete ${targetPath}`
+                        : 'confirm delete that file';
+                    sendPayload(confirmText, 'tool');
+                } else {
+                    const systemMsg = 'Delete cancelled.';
+                    const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    appendMessage('system', systemMsg, systemTimestamp);
+                    saveToHistory('system', systemMsg, systemTimestamp);
+                    saveDebugTrace('delete_cancelled', { mode, message: systemMsg });
+                }
+            }, 0);
+
+            return true;
         }
 
         // Persistence + Debug Trace Logic
@@ -717,6 +2183,7 @@
 
             const nested = envelope.json && typeof envelope.json === 'object' ? envelope.json : {};
             const action = String(envelope.action || nested.action || '').toLowerCase();
+            const status = String(envelope.status || nested.status || '').toLowerCase();
             const destinationPath = normalizePath(envelope.destinationPath || nested.destinationPath || '');
             const fullPath = normalizePath(
                 envelope.fullPath ||
@@ -728,15 +2195,24 @@
                 nested.contextLastFilePath ||
                 ''
             );
+            const contextLastFilePath = normalizePath(envelope.contextLastFilePath || nested.contextLastFilePath || '');
             const pendingClarifyFlag = String(envelope.contextPendingClarify || nested.contextPendingClarify || '').trim();
+            const isFileAction = ['write_file', 'read_file', 'move_file', 'delete_file'].includes(action);
+            const isSuccessStatus = status === 'success' || status === 'ok';
+            const isErrorStatus = status === 'error' || status === 'failed' || status === 'failure';
+            const hasExplicitError = !!String(envelope.error || nested.error || '').trim();
+            const treatAsSuccess = isSuccessStatus || (isFileAction && !status && !isErrorStatus && !hasExplicitError);
 
-            if (fullPath && ['write_file', 'read_file', 'move_file', 'delete_file'].includes(action)) {
-                if (action === 'delete_file') {
-                    if (normalizePath(contextState.lastFilePath) === fullPath) {
-                        contextState.lastFilePath = '';
+            if (isFileAction) {
+                if (treatAsSuccess) {
+                    const resolvedPath = fullPath || contextLastFilePath;
+                    if (action === 'delete_file') {
+                        if (resolvedPath && normalizePath(contextState.lastFilePath) === resolvedPath) {
+                            contextState.lastFilePath = '';
+                        }
+                    } else if (resolvedPath) {
+                        contextState.lastFilePath = resolvedPath;
                     }
-                } else {
-                    contextState.lastFilePath = fullPath;
                 }
             }
 
@@ -799,6 +2275,7 @@
                 lastToolAction: '',
                 pendingClarify: false,
                 pendingMode: '',
+                modelName: modelSelector ? String(modelSelector.value || 'llama3.2') : 'llama3.2',
                 updatedAt: '',
             };
             chatWindow.innerHTML = '<div class="message system">History Cleared.</div>';
@@ -845,28 +2322,253 @@
             throw new Error("No webhook endpoint available.");
         }
 
+        const AXIOM_DEFAULT_BASE_DIR = 'C:/Users/Martin/.n8n-files/Axiom_Files';
+
+        function isCreateFileRequest(text, mode) {
+            if (mode !== 'tool') return false;
+            const lower = String(text || '').toLowerCase();
+            if (!lower.trim()) return false;
+            if (/^\s*confirm\s+delete\b/.test(lower)) return false;
+            const createVerb = /\b(create|make|generate|new)\b/.test(lower);
+            const fileNoun = /\b(file|txt|text|document|note)\b/.test(lower);
+            const blocked = /\b(read|open|show|list|delete|remove|rename|move)\b/.test(lower) && !/\bcreate\b/.test(lower);
+            return createVerb && fileNoun && !blocked;
+        }
+
+        function sanitizeFileName(rawName, fallback = 'new_file.txt') {
+            const fallbackSafe = String(fallback || 'new_file.txt').trim() || 'new_file.txt';
+            let name = String(rawName || '').trim();
+            if (!name) name = fallbackSafe;
+            name = name.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+            name = name.replace(/\s+/g, ' ').trim();
+            if (!name || name === '.' || name === '..') name = fallbackSafe;
+            if (!/\.[A-Za-z0-9]{1,10}$/.test(name)) name += '.txt';
+            return name;
+        }
+
+        function extractSuggestedFileName(text) {
+            const command = String(text || '');
+            const namedMatch =
+                command.match(/\b(?:name\s+it|named|called)\s+["'`]?([^"'`\n\r]+?)["'`]?(?=$|\s|[.,;:!?])/i) ||
+                command.match(/\bfile\s+name\s*[:=]\s*["'`]?([^"'`\n\r]+?)["'`]?(?=$|\s|[.,;:!?])/i);
+            const candidate = namedMatch && namedMatch[1] ? namedMatch[1] : 'new_file.txt';
+            return sanitizeFileName(candidate, 'new_file.txt');
+        }
+
+        async function pickCreateFileTarget(suggestedFileName) {
+            const safeName = sanitizeFileName(suggestedFileName, 'new_file.txt');
+
+            if (typeof window.showSaveFilePicker === 'function') {
+                try {
+                    const handle = await window.showSaveFilePicker({
+                        suggestedName: safeName,
+                        types: [
+                            {
+                                description: 'Text files',
+                                accept: {
+                                    'text/plain': ['.txt', '.md', '.log', '.json', '.csv'],
+                                },
+                            },
+                        ],
+                        excludeAcceptAllOption: false,
+                    });
+
+                    if (handle) {
+                        return {
+                            kind: 'handle',
+                            handle,
+                            fileName: sanitizeFileName(handle.name || safeName, safeName),
+                        };
+                    }
+                } catch (error) {
+                    if (!(error && error.name === 'AbortError')) {
+                        saveDebugTrace('save_picker_error', {
+                            source: 'showSaveFilePicker',
+                            name: error && error.name ? error.name : 'Error',
+                            message: error && error.message ? error.message : 'Unknown save picker error',
+                        });
+                    }
+                }
+            }
+
+            const manualDefault = `${AXIOM_DEFAULT_BASE_DIR}/${safeName}`;
+            const enteredPath = window.prompt(
+                'Windows save picker is not available here. Paste full target file path:',
+                manualDefault
+            );
+            if (!enteredPath || !String(enteredPath).trim()) return null;
+
+            const normalizedManualPath = normalizePath(enteredPath);
+            const manualFileName = sanitizeFileName(
+                String(normalizedManualPath).replace(/\\/g, '/').split('/').pop() || safeName,
+                safeName
+            );
+
+            return {
+                kind: 'path',
+                path: normalizedManualPath,
+                fileName: manualFileName,
+            };
+        }
+
+        async function prepareOutboundRequest(text, mode) {
+            const originalText = String(text || '');
+            const outbound = {
+                requestText: originalText,
+                displayText: originalText,
+                saveTarget: null,
+            };
+
+            if (!isCreateFileRequest(originalText, mode)) {
+                return outbound;
+            }
+
+            const permissionMessage = 'This command will create a file. After you confirm, you will choose the save location in a Windows dialog.';
+            const approved = window.confirm(permissionMessage);
+            if (!approved) {
+                const systemMsg = 'File creation cancelled.';
+                const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                appendMessage('system', systemMsg, systemTimestamp);
+                saveToHistory('system', systemMsg, systemTimestamp);
+                saveDebugTrace('create_file_cancelled', { reason: 'permission_declined', mode });
+                return null;
+            }
+
+            const suggestedFileName = extractSuggestedFileName(originalText);
+            const target = await pickCreateFileTarget(suggestedFileName);
+            if (!target) {
+                const systemMsg = 'File creation cancelled (no location selected).';
+                const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                appendMessage('system', systemMsg, systemTimestamp);
+                saveToHistory('system', systemMsg, systemTimestamp);
+                saveDebugTrace('create_file_cancelled', { reason: 'no_target_selected', mode });
+                return null;
+            }
+
+            if (target.kind === 'handle') {
+                const tempPath = `${AXIOM_DEFAULT_BASE_DIR}/${sanitizeFileName(target.fileName, suggestedFileName)}`;
+                outbound.requestText = `${originalText}\n\nTarget file path: ${tempPath}`;
+                outbound.saveTarget = target;
+                saveDebugTrace('create_file_target_selected', {
+                    source: 'save_picker',
+                    fileName: target.fileName,
+                    tempPath,
+                });
+                return outbound;
+            }
+
+            outbound.requestText = `${originalText}\n\nTarget file path: ${target.path}`;
+            outbound.saveTarget = target;
+            saveDebugTrace('create_file_target_selected', {
+                source: 'manual_path',
+                fileName: target.fileName,
+                path: target.path,
+            });
+            return outbound;
+        }
+
+        async function applyPickedSaveTarget(data, outboundMeta) {
+            if (!outboundMeta || !outboundMeta.saveTarget || outboundMeta.saveTarget.kind !== 'handle') return null;
+
+            const envelope = getResponseEnvelope(data);
+            if (!envelope || typeof envelope !== 'object') return null;
+            const nested = envelope.json && typeof envelope.json === 'object' ? envelope.json : {};
+            const action = String(envelope.action || nested.action || '').toLowerCase();
+            const status = String(envelope.status || nested.status || '').toLowerCase();
+            if (action !== 'write_file' || status !== 'success') return null;
+
+            const content = String(envelope.content ?? nested.content ?? '');
+            try {
+                const writable = await outboundMeta.saveTarget.handle.createWritable();
+                await writable.write(content);
+                await writable.close();
+                return `I have successfully written the file to your selected location (${outboundMeta.saveTarget.fileName}).`;
+            } catch (error) {
+                saveDebugTrace('save_picker_write_error', {
+                    name: error && error.name ? error.name : 'Error',
+                    message: error && error.message ? error.message : 'Could not write to selected save target',
+                    fileName: outboundMeta.saveTarget.fileName,
+                });
+                return `I generated the file, but I could not write it to the selected location (${outboundMeta.saveTarget.fileName}).`;
+            }
+        }
+
         // Send payload to n8n
-        async function sendPayload(text, mode) {
-            if (!text.trim()) return;
+        async function sendPayload(text, mode, outboundMeta = null) {
+            const requestText = String((outboundMeta && outboundMeta.requestText) || text || '');
+            const displayText = String((outboundMeta && outboundMeta.displayText) || text || '');
+            if (!requestText.trim()) return;
+
+            if (!internetSearchEnabled && likelyNeedsInternetSearch(requestText, mode)) {
+                const systemMsg = 'This request likely needs live internet data. Click the globe button and choose "Internet search Enabled", then resend.';
+                const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                appendMessage('system', systemMsg, systemTimestamp);
+                saveToHistory('system', systemMsg, systemTimestamp);
+                saveDebugTrace('internet_search_required_but_disabled', {
+                    mode,
+                    content: requestText,
+                });
+                return;
+            }
+
+            const selectedModelName = String((modelSelector && modelSelector.value) || contextState.modelName || 'llama3.2').trim() || 'llama3.2';
+            const selectedModelEntry =
+                modelCatalogState.entries.find((entry) => entry.name === selectedModelName) ||
+                modelCatalogState.entries.find((entry) => normalizeModelKey(entry.name) === normalizeModelKey(selectedModelName));
+            const selectedModelInstalled = isModelInstalled(selectedModelName);
+
+            if (selectedModelEntry && !selectedModelInstalled) {
+                const installNow = window.confirm(
+                    `Model ${selectedModelEntry.displayName || selectedModelEntry.name} is not installed yet.\n\n` +
+                    `Download size: ${selectedModelEntry.downloadSize || 'unknown'}\n` +
+                    `${selectedModelEntry.hardware}\n\nInstall now before sending this request?`
+                );
+                if (!installNow) {
+                    const systemMsg = `Request cancelled. Install ${selectedModelEntry.displayName || selectedModelEntry.name} first, or pick an installed model.`;
+                    const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    appendMessage('system', systemMsg, systemTimestamp);
+                    saveToHistory('system', systemMsg, systemTimestamp);
+                    return;
+                }
+                await installSelectedModel();
+                if (!isModelInstalled(selectedModelName)) {
+                    const systemMsg = `Model install did not complete for ${selectedModelEntry.displayName || selectedModelEntry.name}. Request not sent.`;
+                    const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    appendMessage('system', systemMsg, systemTimestamp);
+                    saveToHistory('system', systemMsg, systemTimestamp);
+                    return;
+                }
+            }
+
+            contextState.modelName = selectedModelName;
+            contextState.updatedAt = new Date().toISOString();
+            persistContextState();
+            localStorage.setItem('axiomSelectedModel', selectedModelName);
 
             const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            appendMessage('user', text, timestamp);
-            saveToHistory('user', text, timestamp, [], { contextState: { ...contextState } });
+            appendMessage('user', displayText, timestamp);
+            saveToHistory('user', displayText, timestamp, [], { contextState: { ...contextState } });
             saveDebugTrace('user_request', {
                 mode,
-                content: text,
+                content: requestText,
+                displayText,
+                modelName: selectedModelName,
+                internetSearchEnabled,
                 historyCount: history.length,
             });
 
-            if (mode === 'tool' && text.trim() && !/^\s*(?:option\s*)?[1-4]\s*$/i.test(text)) {
-                contextState.lastUserFileCommand = text.trim();
+            if (mode === 'tool' && requestText.trim() && !/^\s*(?:option\s*)?[1-4]\s*$/i.test(requestText)) {
+                contextState.lastUserFileCommand = requestText.trim();
                 contextState.updatedAt = new Date().toISOString();
                 persistContextState();
             }
 
             const requestPayload = {
                 mode,
-                content: text,
+                content: requestText,
+                modelName: selectedModelName,
+                internetSearchEnabled,
+                internetSearchMode: internetSearchEnabled ? 'enabled' : 'disabled',
                 timestamp: new Date().toISOString(),
                 history: history.slice(-20).map((m) => ({
                     sender: m.sender,
@@ -932,13 +2634,21 @@
                         if (first && typeof first === "object") {
                             reply =
                                 first.response ||
+                                first.reply ||
                                 first.output ||
                                 first.message ||
-                                (first.json && (first.json.response || first.json.output || first.json.message)) ||
+                                (first.json && (first.json.response || first.json.reply || first.json.output || first.json.message || first.json.error)) ||
                                 "";
                         }
                     } else if (data && typeof data === "object") {
-                        reply = data.response || data.output || data.message || "";
+                        reply =
+                            data.response ||
+                            data.reply ||
+                            data.output ||
+                            data.message ||
+                            (data.json && (data.json.response || data.json.reply || data.json.output || data.json.message || data.json.error)) ||
+                            data.error ||
+                            "";
                     } else if (typeof data === "string") {
                         reply = data;
                     }
@@ -951,7 +2661,11 @@
                         extractedReply: reply,
                     });
 
-                    updateContextFromResponse(data, text, mode);
+                    updateContextFromResponse(data, requestText, mode);
+                    const pickerReply = await applyPickedSaveTarget(data, outboundMeta);
+                    if (pickerReply) {
+                        reply = pickerReply;
+                    }
 
                     if (reply) {
                         const agentSteps = ["Workflow verification passed", "Data encrypted for local storage"];
@@ -967,6 +2681,8 @@
                             reply,
                             webhookUrl,
                         });
+
+                        handleDeleteConfirmationPrompt(reply, mode);
                     } else {
                         const systemMsg = "Workflow accepted the request, but no response payload was returned yet.";
                         const systemTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -1030,16 +2746,64 @@
         userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                sendPayload(userInput.value, currentMode);
+                (async () => {
+                    const outbound = await prepareOutboundRequest(userInput.value, currentMode);
+                    if (!outbound) return;
+                    sendPayload(userInput.value, currentMode, outbound);
+                })();
             }
         });
 
-        sendBtn.addEventListener('click', () => sendPayload(userInput.value, currentMode));
+        sendBtn.addEventListener('click', () => {
+            (async () => {
+                const outbound = await prepareOutboundRequest(userInput.value, currentMode);
+                if (!outbound) return;
+                sendPayload(userInput.value, currentMode, outbound);
+            })();
+        });
+        if (internetToggleBtn) {
+            internetToggleBtn.addEventListener('click', () => {
+                setInternetModalOpen(true);
+            });
+        }
+        if (internetOptionEnabled) {
+            internetOptionEnabled.addEventListener('click', () => {
+                setInternetSearchEnabled(true, true);
+                setInternetModalOpen(false);
+                setModelInstallStatus('Internet search enabled.', 'success');
+            });
+        }
+        if (internetOptionDisabled) {
+            internetOptionDisabled.addEventListener('click', () => {
+                setInternetSearchEnabled(false, true);
+                setInternetModalOpen(false);
+                setModelInstallStatus('Internet search disabled.', 'warn');
+            });
+        }
+        if (internetModalOverlay) {
+            internetModalOverlay.addEventListener('click', (event) => {
+                if (event.target === internetModalOverlay) {
+                    setInternetModalOpen(false);
+                }
+            });
+        }
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                setInternetModalOpen(false);
+            }
+        });
         clearHistoryBtn.addEventListener('click', clearHistory);
         exportDebugBtn.addEventListener('click', exportDebugSnapshot);
 
         // Initial Load
         window.addEventListener('load', () => {
+            setInternetSearchEnabled(localStorage.getItem('axiomInternetSearchEnabled') === '1', false);
+            initializeModelSelection().catch((error) => {
+                setModelInstallStatus(
+                    `Model catalog init failed: ${String(error && error.message ? error.message : 'unknown error')}`,
+                    'error'
+                );
+            });
             loadHistory();
             userInput.focus();
         });

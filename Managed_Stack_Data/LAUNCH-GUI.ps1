@@ -2,6 +2,11 @@ Add-Type -AssemblyName System.Windows.Forms
 [System.Windows.Forms.Application]::EnableVisualStyles()
 Add-Type -AssemblyName System.Drawing
 
+# Keep npm/node stderr notices from being surfaced as terminating PowerShell errors.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
+    $global:PSNativeCommandUseErrorActionPreference = $false
+}
+
 # Launcher must run elevated to reliably stop stale node/n8n processes.
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -35,6 +40,7 @@ $script:startInProgress = $false
 $script:startDeadline = $null
 $script:hubProcessId = $null
 $script:n8nProcessId = $null
+$script:mcpBridgeProcessId = $null
 $script:hubProfileDir = Join-Path $env:TEMP "AxiomHubProfile"
 $script:routerWorkflowId = "dTzRbVa8bRBZTZ6O"
 
@@ -84,6 +90,116 @@ function Test-N8nReady {
     }
 }
 
+function Test-McpBridgeReady {
+    try {
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:3055/health" -TimeoutSec 2 -ErrorAction Stop
+        return $resp.StatusCode -eq 200
+    }
+    catch {
+        return $false
+    }
+}
+
+function Ensure-McpBridgeRunning {
+    param(
+        [System.Windows.Forms.TextBox]$OutputBox
+    )
+
+    if (Test-McpBridgeReady) {
+        $OutputBox.AppendText("Model bridge already running on 127.0.0.1:3055`r`n")
+        return $true
+    }
+
+    $bridgeRoot = Join-Path (Split-Path $PSScriptRoot -Parent) "Axiom-MCP-Server"
+    if (-not (Test-Path $bridgeRoot)) {
+        $OutputBox.AppendText("WARNING: Axiom-MCP-Server directory not found. Model install bridge disabled.`r`n")
+        return $false
+    }
+
+    $bridgeEntry = Join-Path $bridgeRoot "dist\\index.js"
+    $bridgeSource = Join-Path $bridgeRoot "index.ts"
+    $bridgeNodeModules = Join-Path $bridgeRoot "node_modules"
+    if (-not (Test-Path $bridgeNodeModules)) {
+        $OutputBox.AppendText("Installing model bridge dependencies...`r`n")
+        Push-Location $bridgeRoot
+        try {
+            $installOut = & npm install --no-progress 2>&1 | Out-String
+            if ($installOut) { $OutputBox.AppendText($installOut.Trim() + "`r`n") }
+            if ($LASTEXITCODE -ne 0) {
+                $OutputBox.AppendText("ERROR: Failed to install model bridge dependencies (exit $LASTEXITCODE).`r`n")
+                return $false
+            }
+        }
+        catch {
+            $OutputBox.AppendText("ERROR: Failed to install model bridge dependencies: $($_.Exception.Message)`r`n")
+            return $false
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    $needsBuild = -not (Test-Path $bridgeEntry)
+    if (-not $needsBuild -and (Test-Path $bridgeSource)) {
+        try {
+            $srcTime = (Get-Item $bridgeSource).LastWriteTimeUtc
+            $distTime = (Get-Item $bridgeEntry).LastWriteTimeUtc
+            if ($srcTime -gt $distTime) { $needsBuild = $true }
+        }
+        catch { }
+    }
+
+    if ($needsBuild) {
+        $OutputBox.AppendText("Building model bridge service...`r`n")
+        Push-Location $bridgeRoot
+        try {
+            $buildOut = & npm run build 2>&1 | Out-String
+            if ($buildOut) { $OutputBox.AppendText($buildOut.Trim() + "`r`n") }
+            if ($LASTEXITCODE -ne 0) {
+                $OutputBox.AppendText("ERROR: Failed to build model bridge (exit $LASTEXITCODE).`r`n")
+                return $false
+            }
+        }
+        catch {
+            $OutputBox.AppendText("ERROR: Failed to build model bridge: $($_.Exception.Message)`r`n")
+            return $false
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    if (-not (Test-Path $bridgeEntry)) {
+        $OutputBox.AppendText("ERROR: Model bridge entrypoint missing: $bridgeEntry`r`n")
+        return $false
+    }
+
+    $bridgeLog = Join-Path $env:TEMP "axiom_mcp_bridge.log"
+    try {
+        $cmd = "/c cd /d `"$bridgeRoot`" && node dist/index.js >> `"$bridgeLog`" 2>&1"
+        $bridgeProc = Start-Process cmd.exe -ArgumentList $cmd -WindowStyle Hidden -PassThru -ErrorAction Stop
+        if ($bridgeProc) {
+            $script:mcpBridgeProcessId = $bridgeProc.Id
+            $OutputBox.AppendText("Started model bridge process PID $($script:mcpBridgeProcessId).`r`n")
+        }
+    }
+    catch {
+        $OutputBox.AppendText("ERROR: Failed to start model bridge: $($_.Exception.Message)`r`n")
+        return $false
+    }
+
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep -Milliseconds 500
+        if (Test-McpBridgeReady) {
+            $OutputBox.AppendText("Model bridge is online.`r`n")
+            return $true
+        }
+    }
+
+    $OutputBox.AppendText("ERROR: Model bridge failed health check on 127.0.0.1:3055.`r`n")
+    return $false
+}
+
 function Stop-ProcessTreeById {
     param(
         [int]$ProcessId,
@@ -113,7 +229,7 @@ function Stop-ListenersOnPorts {
     $pids = New-Object System.Collections.Generic.HashSet[int]
     foreach ($port in $Ports) {
         try {
-            $listeners = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+            $listeners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             foreach ($c in $listeners) {
                 if ($c -and $c.OwningProcess -and $c.OwningProcess -gt 0) {
                     [void]$pids.Add([int]$c.OwningProcess)
@@ -139,7 +255,7 @@ function Wait-PortsReleased {
     while ((Get-Date) -lt $deadline) {
         $busy = $false
         foreach ($port in $Ports) {
-            if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) {
+            if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
                 $busy = $true
                 break
             }
@@ -208,7 +324,12 @@ function Stop-AxiomStack {
         $script:n8nProcessId = $null
     }
 
-    Stop-ListenersOnPorts -Ports @(5678, 5679) -OutputBox $OutputBox
+    if ($script:mcpBridgeProcessId) {
+        Stop-ProcessTreeById -ProcessId $script:mcpBridgeProcessId -OutputBox $OutputBox -Label "model bridge"
+        $script:mcpBridgeProcessId = $null
+    }
+
+    Stop-ListenersOnPorts -Ports @(5678, 5679, 3055) -OutputBox $OutputBox
 
     $targets = @("node", "n8n")
     if ($StopOllama) { $targets += @("ollama", "ollama app") }
@@ -226,7 +347,19 @@ function Stop-AxiomStack {
         }
     }
 
-    [void](Wait-PortsReleased -Ports @(5678, 5679) -OutputBox $OutputBox)
+    $portsReleased = Wait-PortsReleased -Ports @(5678, 5679, 3055) -OutputBox $OutputBox
+    if (-not $portsReleased) {
+        $OutputBox.AppendText("Retrying forced listener cleanup on 5678/5679/3055...`r`n")
+        Stop-ListenersOnPorts -Ports @(5678, 5679, 3055) -OutputBox $OutputBox
+        $portsReleased = Wait-PortsReleased -Ports @(5678, 5679, 3055) -OutputBox $OutputBox -TimeoutSeconds 8
+    }
+
+    if (-not $portsReleased) {
+        $OutputBox.AppendText("ERROR: Could not free engine ports (5678/5679/3055). Resolve stale process lock before restart.`r`n")
+        return $false
+    }
+
+    return $true
 }
 
 function Sync-CustomNodePackage {
@@ -343,7 +476,7 @@ function Sync-CustomNodePackage {
         $pkgPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\package.json"
         $pkgVersion = if (Test-Path $pkgPath) { (Get-Content $pkgPath -Raw | ConvertFrom-Json).version } else { "unknown" }
         $parserHash = (Get-FileHash -Path $parserPath -Algorithm SHA256).Hash.Substring(0, 12)
-        $OutputBox.AppendText("Installed custom node version: $pkgVersion (parser $parserHash)`r`n")
+        $OutputBox.AppendText("Installed custom node version: $pkgVersion (parser sha256:$parserHash)`r`n")
     }
     catch {
         $OutputBox.AppendText("Warning: Could not compute parser fingerprint: $($_.Exception.Message)`r`n")
@@ -403,11 +536,24 @@ function Start-AxiomStack {
     New-BootLogFile
 
     $OutputBox.AppendText("--- Clearing Lingering AI Processes ---`r`n")
-    Stop-AxiomStack -OutputBox $OutputBox
+    if (-not (Stop-AxiomStack -OutputBox $OutputBox)) {
+        $StatusLabel.Text = "Could not clear existing n8n ports."
+        $StatusLabel.ForeColor = [System.Drawing.Color]::Red
+        $script:startInProgress = $false
+        return
+    }
 
     $OutputBox.AppendText("--- Verifying Ollama ---`r`n")
     if (-not (Ensure-OllamaRunning -OutputBox $OutputBox)) {
         $StatusLabel.Text = "Ollama startup failed."
+        $StatusLabel.ForeColor = [System.Drawing.Color]::Red
+        $script:startInProgress = $false
+        return
+    }
+
+    $OutputBox.AppendText("--- Starting Model Bridge ---`r`n")
+    if (-not (Ensure-McpBridgeRunning -OutputBox $OutputBox)) {
+        $StatusLabel.Text = "Model bridge startup failed."
         $StatusLabel.ForeColor = [System.Drawing.Color]::Red
         $script:startInProgress = $false
         return
@@ -466,7 +612,13 @@ function Start-AxiomStack {
     $env:N8N_CORS_ALLOWED_HEADERS = "*"
     $env:N8N_DIAGNOSTICS_ENABLED = "false"
     $env:N8N_VERSION_NOTIFICATIONS_ENABLED = "false"
-    $env:N8N_RESTRICT_FILE_ACCESS_TO = "C:\Axiom_Files;~/.n8n-files"
+    $restrictFileAccessRoots = @(
+        "C:\Axiom_Files",
+        "$env:USERPROFILE\.n8n-files",
+        "$env:USERPROFILE"
+    ) | Where-Object { $_ -and $_.Trim() -ne '' }
+    $env:N8N_RESTRICT_FILE_ACCESS_TO = ($restrictFileAccessRoots -join ";")
+    $OutputBox.AppendText("N8N_RESTRICT_FILE_ACCESS_TO = $($env:N8N_RESTRICT_FILE_ACCESS_TO)`r`n")
     $env:NODE_FUNCTION_ALLOW_BUILTIN = "fs,path"
 
     $n8nProc = Start-Process cmd.exe -ArgumentList "/c chcp 65001 > NUL && n8n start > `"$script:logFile`" 2>&1" -WindowStyle Hidden -PassThru

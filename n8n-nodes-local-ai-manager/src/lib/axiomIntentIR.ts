@@ -300,8 +300,9 @@ export const buildIntentIR = (input: BuildIRInput): AxiomIntentIR => {
 		reasons.push('unresolved or unsupported operation');
 	} else if (input.isExternal) {
 		risk = 'high';
-		mode = 'plan';
+		mode = 'direct';
 		reasons.push('external target');
+		reasons.push('external target requires runtime approval');
 	} else if (
 		input.operation.type === 'transform_text' ||
 		input.operation.type === 'write_text' ||
@@ -315,7 +316,7 @@ export const buildIntentIR = (input: BuildIRInput): AxiomIntentIR => {
 	if (input.confidence < 0.55) {
 		mode = 'clarify';
 		reasons.push('low confidence');
-	} else if (input.confidence < 0.8 && mode === 'direct') {
+	} else if (input.confidence < 0.8 && mode === 'direct' && !input.isExternal) {
 		mode = 'plan';
 		reasons.push('medium confidence');
 	}
@@ -397,7 +398,11 @@ export const validateIntentIR = (ir: AxiomIntentIR): AxiomIRValidation => {
 		if (!toPath.trim()) errors.push('missing_required_param:toPath');
 	}
 
-	if (ir.execution.mode === 'direct' && ir.execution.risk === 'high') {
+	if (
+		ir.execution.mode === 'direct' &&
+		ir.execution.risk === 'high' &&
+		!ir.execution.reasons.includes('external target')
+	) {
 		errors.push('direct_mode_not_allowed_for_high_risk');
 	}
 

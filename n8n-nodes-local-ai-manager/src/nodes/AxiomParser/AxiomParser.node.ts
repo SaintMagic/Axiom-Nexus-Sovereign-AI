@@ -59,6 +59,13 @@ export class AxiomParser implements INodeType {
 				description: 'Previous user file command for contextual normalization',
 			},
 			{
+				displayName: 'Pending Clarify',
+				name: 'pendingClarify',
+				type: 'boolean',
+				default: '={{ $node["Extract Input"].json.pendingClarify === true }}',
+				description: 'Whether there is an unresolved clarification choice awaiting user selection',
+			},
+			{
 				displayName: 'Base Directory',
 				name: 'baseDir',
 				type: 'string',
@@ -93,6 +100,7 @@ export class AxiomParser implements INodeType {
 				const originalCommand = String(this.getNodeParameter('originalCommand', i));
 				const lastFilePath = String(this.getNodeParameter('lastFilePath', i));
 				const lastUserFileCommand = String(this.getNodeParameter('lastUserFileCommand', i));
+				const pendingClarify = !!this.getNodeParameter('pendingClarify', i);
 				const baseDir = String(this.getNodeParameter('baseDir', i));
 				const defaultWriteName = String(this.getNodeParameter('defaultWriteName', i));
 				const clarifyOnError = !!this.getNodeParameter('clarifyOnError', i);
@@ -107,6 +115,7 @@ export class AxiomParser implements INodeType {
 					originalCommand,
 					lastFilePath,
 					lastUserFileCommand,
+					pendingClarify,
 					plannerTier,
 					defaultWriteName,
 					clarifyOnError,

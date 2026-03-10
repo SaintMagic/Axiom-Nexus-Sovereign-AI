@@ -7,6 +7,11 @@ Add-Type -AssemblyName System.Windows.Forms
 Set-Location -Path $PSScriptRoot
 $script:n8nProcessId = $null
 
+# Keep npm/node stderr notices from being surfaced as terminating PowerShell errors.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Scope Global -ErrorAction SilentlyContinue) {
+    $global:PSNativeCommandUseErrorActionPreference = $false
+}
+
 $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     [System.Windows.Forms.MessageBox]::Show(
@@ -47,7 +52,7 @@ function Stop-ListenersOnPorts {
     $pids = New-Object System.Collections.Generic.HashSet[int]
     foreach ($port in $Ports) {
         try {
-            $listeners = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
+            $listeners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
             foreach ($c in $listeners) {
                 if ($c -and $c.OwningProcess -and $c.OwningProcess -gt 0) {
                     [void]$pids.Add([int]$c.OwningProcess)
@@ -72,7 +77,7 @@ function Wait-PortsReleased {
     while ((Get-Date) -lt $deadline) {
         $busy = $false
         foreach ($port in $Ports) {
-            if (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue) {
+            if (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue) {
                 $busy = $true
                 break
             }
@@ -195,7 +200,7 @@ function Sync-CustomNodePackage {
         $pkgPath = Join-Path $nodesDir "node_modules\n8n-nodes-local-ai-manager\package.json"
         $pkgVersion = if (Test-Path $pkgPath) { (Get-Content $pkgPath -Raw | ConvertFrom-Json).version } else { "unknown" }
         $parserHash = (Get-FileHash -Path $parserPath -Algorithm SHA256).Hash.Substring(0, 12)
-        Write-Host "Installed custom node version: $pkgVersion (parser $parserHash)" -ForegroundColor Gray
+        Write-Host "Installed custom node version: $pkgVersion (parser sha256:$parserHash)" -ForegroundColor Gray
     }
     catch {
         Write-Host "WARNING: Could not compute parser fingerprint: $($_.Exception.Message)" -ForegroundColor Yellow

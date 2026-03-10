@@ -19,6 +19,7 @@ export interface AxiomParseInput {
 	originalCommand: string;
 	lastFilePath?: string;
 	lastUserFileCommand?: string;
+	pendingClarify?: boolean;
 	plannerTier?: string;
 	defaultWriteName?: string;
 	clarifyOnError?: boolean;
@@ -110,6 +111,14 @@ const stripInjectedContext = (raw: string): string => {
 	return text.trim();
 };
 
+const stripQuotedSegments = (raw: string): string => {
+	let text = String(raw || '');
+	text = text.replace(/"[^"]*"/g, ' ');
+	text = text.replace(/'[^']*'/g, ' ');
+	text = text.replace(/`[^`]*`/g, ' ');
+	return text;
+};
+
 const sanitizeName = (name: unknown): string => {
 	let n = String(name || '').trim();
 	if (!n) return '';
@@ -138,6 +147,77 @@ const parseJsonPayload = (text: string): Record<string, any> | null => {
 		}
 	}
 	return null;
+};
+
+const parseLooseJson = (value: unknown): unknown => {
+	const text = String(value || '').trim();
+	if (!text) return null;
+	try {
+		return JSON.parse(text);
+	} catch {
+		const wrapped = parseJsonPayload(text);
+		if (wrapped) return wrapped;
+	}
+	return null;
+};
+
+const normalizePlannerPayload = (raw: Record<string, any>): Record<string, any> => {
+	const base = { ...(raw || {}) } as Record<string, any>;
+	const name = String(base.name || base.tool || '').toLowerCase().trim();
+	const argsRaw = base.parameters ?? base.arguments ?? base.params;
+	let args: Record<string, any> = {};
+	if (argsRaw && typeof argsRaw === 'object' && !Array.isArray(argsRaw)) {
+		args = { ...(argsRaw as Record<string, any>) };
+	} else if (typeof argsRaw === 'string') {
+		const parsedArgs = parseLooseJson(argsRaw);
+		if (parsedArgs && typeof parsedArgs === 'object' && !Array.isArray(parsedArgs)) {
+			args = { ...(parsedArgs as Record<string, any>) };
+		}
+	}
+
+	const merged: Record<string, any> = {
+		...base,
+		...args,
+	};
+
+	if (!merged.action && name) {
+		if (name === 'line_edit') {
+			merged.action = 'write_file';
+			merged.writeMode = merged.writeMode || 'line_edit';
+		} else if (name === 'append_file' || name === 'append_to_file') {
+			merged.action = 'write_file';
+			merged.writeMode = merged.writeMode || 'append';
+		} else if (name === 'create_empty_file') {
+			merged.action = 'write_file';
+			merged.allowEmptyWrite = true;
+		} else if (name === 'rename_file') {
+			merged.action = 'move_file';
+		} else if (name === 'move') {
+			merged.action = 'move_file';
+		} else if (name === 'delete') {
+			merged.action = 'delete_file';
+		} else if (name === 'read') {
+			merged.action = 'read_file';
+		} else if (
+			name === 'write_file' ||
+			name === 'read_file' ||
+			name === 'list_directory' ||
+			name === 'delete_file' ||
+			name === 'move_file'
+		) {
+			merged.action = name;
+		}
+	}
+
+	if (typeof merged.lineEdits === 'string') {
+		const parsedLineEdits = parseLooseJson(merged.lineEdits);
+		if (Array.isArray(parsedLineEdits)) merged.lineEdits = parsedLineEdits;
+		else if (parsedLineEdits && typeof parsedLineEdits === 'object' && Array.isArray((parsedLineEdits as any).lineEdits)) {
+			merged.lineEdits = (parsedLineEdits as any).lineEdits;
+		}
+	}
+
+	return merged;
 };
 
 const parseLineNumber = (value: unknown): number | null => {
@@ -271,6 +351,13 @@ const resolveKnowledgePhrase = (text: string): string => {
 };
 
 const normalizeLineEdits = (raw: unknown): Array<{ line: number; text: string }> => {
+	if (typeof raw === 'string') {
+		const parsed = parseLooseJson(raw);
+		if (Array.isArray(parsed)) raw = parsed;
+		else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as any).lineEdits)) {
+			raw = (parsed as any).lineEdits;
+		}
+	}
 	if (!Array.isArray(raw)) return [];
 	const out: Array<{ line: number; text: string }> = [];
 	for (const item of raw) {
@@ -289,7 +376,7 @@ const cleanDirectiveText = (raw: string): string => {
 	let value = String(raw || '').trim();
 	if (!value) return '';
 	value = value.replace(/^\s*(?:text|line|content)\s*(?::|is)?\s*/i, '');
-	value = value.replace(/^\s*(?:is|to|as)\b\s*/i, '');
+	value = value.replace(/^\s*(?:is|to)\b\s*/i, '');
 	value = value.replace(/^\s*(?:should\s+be|should\s+say|it\s+is|it\s+says?|says?)\s*/i, '');
 	value = value.replace(/^\s*(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:empty|blank)\s+lines?\s+and\s*/i, '');
 	value = value.replace(/^\s*(?:write|put|add|append|insert|set|make)\s+(?:text|line|content)?\s*/i, '');
@@ -371,9 +458,10 @@ const extractMoveTargetHint = (command: string, lastPath: string, baseDir: strin
 		return `${dir}/${stem}${ext.toLowerCase()}`;
 	}
 
+	const quotedTo = src.match(/\b(?:rename|renmae|move)\b[\s\S]*?\bto\s+["'`]([^"'`\n\r]+)["'`]/i)?.[1] || '';
 	const mRename = src.match(/\b(?:rename|renmae)\b[\s\S]*?\bto\s+([^\n\r]+)$/i);
 	const mMove = src.match(/\bmove\b[\s\S]*?\bto\s+([^\n\r]+)$/i);
-	const rawTarget = cleanupPath((mRename?.[1] || mMove?.[1] || '').replace(/^['"]|['"]$/g, ''));
+	const rawTarget = trimPathCandidate(quotedTo || mRename?.[1] || mMove?.[1] || '');
 	if (!rawTarget) return '';
 
 	if (/^[A-Za-z]:[\\/]/.test(rawTarget)) {
@@ -483,15 +571,33 @@ const extractReplaceSpec = (text: string): { from: string; to: string; caseSensi
 	return null;
 };
 
+const trimPathCandidate = (raw: string): string => {
+	let value = String(raw || '').trim().replace(/^['"`]+|['"`]+$/g, '');
+	if (!value) return '';
+
+	// If a filename is present, drop trailing natural-language clauses.
+	const fileToken = value.match(/^(.+?\.[A-Za-z0-9]{1,10})(?=$|\s|[),.;:!?])/);
+	if (fileToken && fileToken[1]) return cleanupPath(fileToken[1]);
+
+	// Fallback for folder-like paths followed by command suffix.
+	value = value.replace(
+		/\s+(?:with\s+text|with\s+content|with|and\s+text|text\s*(?:is|:)|then|please|named|called|name\s+it)\b[\s\S]*$/i,
+		'',
+	);
+	return cleanupPath(value);
+};
+
 const extractCommandPath = (text: string): string => {
 	const t = String(text || '');
+	const quoted = t.match(/["'`]([A-Za-z]:[\\/][^"'`\n\r]+)["'`]/);
+	if (quoted && quoted[1]) return trimPathCandidate(quoted[1]);
 	const direct = t.match(/([A-Za-z]:[\\/][^\n\r]+)/);
-	if (direct && direct[1]) return cleanupPath(direct[1]);
+	if (direct && direct[1]) return trimPathCandidate(direct[1]);
 	return '';
 };
 
 const inferActionFromCommand = (text: string, contextPath: string): AxiomAction | '' => {
-	const lower = String(text || '').toLowerCase();
+	const lower = stripQuotedSegments(String(text || '')).toLowerCase();
 	const hasFileMention = /\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(text);
 	const removeLineIntent =
 		/\b(?:remove|delete|clear)\b/.test(lower) &&
@@ -507,14 +613,15 @@ const inferActionFromCommand = (text: string, contextPath: string): AxiomAction 
 		/\b(?:delete|remove|erase|trash)\b/.test(lower) &&
 		(/\b(file|txt|text|document|note)\b/.test(lower) ||
 			/\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(text) ||
-			(!!contextPath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower)));
+			(!!contextPath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lower)) ||
+			(!!contextPath && /\bconfirm\b/.test(lower)));
 	const moveFileIntent =
 		(/\b(rename|renmae|move)\b/.test(lower) || extensionChangeIntent) &&
 		(/\b(file|txt|text|document|note|extension)\b/.test(lower) ||
 			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lower) ||
 			(!!contextPath && extensionChangeIntent));
 	const hasLineEditIntent =
-		/\b(?:add|put|set|write|change|make|update|udpate|updte|updat|udate|edit|modify|replace|rewrite)\b/.test(lower) &&
+		/\b(?:add|put|set|write|change|make|update|udpate|updte|updat|udate|edit|modify|replace|rewrite|insert|append)\b/.test(lower) &&
 		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
 			lower,
 		);
@@ -562,25 +669,37 @@ const sanitizePath = (inputPath: string, actionType: AxiomAction, baseDir: strin
 	let p = cleanupPath(inputPath);
 	if (!p) {
 		if (actionType === 'write_file') return `${baseDir}/${sanitizeName(defaultWriteName) || 'helloWorld.txt'}`;
-		return baseDir;
+		if (actionType === 'list_directory') return baseDir;
+		return '';
+	}
+	// Windows fallback: if a drive-less /Users/... path sneaks in, bind it to baseDir drive.
+	if (/^\/Users\//i.test(p) && /^[A-Za-z]:\//.test(baseDir)) {
+		const drive = String(baseDir).match(/^([A-Za-z]):\//)?.[1] || 'C';
+		p = `${drive}:${p}`;
 	}
 	if (/^[a-zA-Z]:/.test(p)) {
-		if (p.toLowerCase().startsWith(baseDir.toLowerCase())) {
-			if (actionType !== 'write_file') return p;
-			if (p.toLowerCase() === baseDir.toLowerCase() || /[\\/]$/.test(p)) {
-				return `${baseDir}/${sanitizeName(defaultWriteName) || 'helloWorld.txt'}`;
-			}
-			const parts = p.split('/').filter((seg) => seg.length > 0);
-			const filePart = parts.pop() || defaultWriteName;
-			const safeFile = sanitizeName(filePart) || sanitizeName(defaultWriteName) || 'helloWorld.txt';
-			return `${parts.join('/')}/${safeFile}`;
+		if (actionType !== 'write_file') return p;
+		if (/^[a-zA-Z]:\/?$/.test(p) || /[\\/]$/.test(p)) {
+			const dir = p.replace(/[\\/]$/, '');
+			return `${dir}/${sanitizeName(defaultWriteName) || 'helloWorld.txt'}`;
 		}
-		const name = sanitizeName(p.split('/').filter(Boolean).pop() || defaultWriteName) || 'file.txt';
-		return `${baseDir}/${name}`;
+		const parts = p.split('/').filter((seg) => seg.length > 0);
+		const filePart = parts.pop() || defaultWriteName;
+		const safeFile = sanitizeName(filePart) || sanitizeName(defaultWriteName) || 'helloWorld.txt';
+		return `${parts.join('/')}/${safeFile}`;
 	}
 	const maybeName = sanitizeName(p.replace(/^\/+/, ''));
 	if (actionType === 'write_file' && maybeName) return `${baseDir}/${maybeName}`;
 	return `${baseDir}/${p.replace(/^\/+/, '')}`;
+};
+
+const isSpecificTargetPath = (candidatePath: string, baseDir: string): boolean => {
+	const c = cleanupPath(candidatePath).replace(/[\\/]+$/, '');
+	const b = cleanupPath(baseDir).replace(/[\\/]+$/, '');
+	if (!c) return false;
+	if (/^[A-Za-z]:$/.test(c)) return false;
+	if (b && c.toLowerCase() === b.toLowerCase()) return false;
+	return true;
 };
 
 const intentLabelMap: Record<string, string> = {
@@ -693,8 +812,8 @@ const withFailure = (
 		action,
 		message,
 		content: '',
-		fullPath: fullPath || baseDir,
-		path: fullPath || baseDir,
+		fullPath: fullPath || '',
+		path: fullPath || '',
 		isExternal: false,
 		append: false,
 		confidence: 0,
@@ -739,9 +858,12 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const baseDir = cleanupPath(input.baseDir || '');
 	const originalCommand = String(input.originalCommand || '');
 	const commandForParsing = stripInjectedContext(originalCommand);
+	const commandForIntent = stripQuotedSegments(commandForParsing);
 	const lastFilePath = cleanupPath(input.lastFilePath || '');
 	const lastUserFileCommand = String(input.lastUserFileCommand || '');
+	const pendingClarify = input.pendingClarify === true;
 	const lowerCommand = commandForParsing.toLowerCase();
+	const lowerIntent = commandForIntent.toLowerCase();
 	const selectionChoice = extractSelectionChoice(originalCommand);
 	const defaultWriteName = String(input.defaultWriteName || 'helloWorld.txt');
 	const clarifyOnError = input.clarifyOnError !== false;
@@ -751,7 +873,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		: '';
 	const effectiveLastFilePath = cleanupPath(lastFilePath || resolvedHistoryFilePath);
 
-	const parsed = parseJsonPayload(String(input.response || '')) || {};
+	const parsed = normalizePlannerPayload(parseJsonPayload(String(input.response || '')) || {});
 	const modelConfidenceRaw = Number((parsed as any).confidence);
 	const modelConfidence = Number.isFinite(modelConfidenceRaw) ? modelConfidenceRaw : null;
 
@@ -759,26 +881,44 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const hasQuoted = /"([^"]+)"|'([^']+)'/.test(lowerCommand);
 	let isCreateFileWithoutPayload = !hasContentKeyword && !hasQuoted && /\b(?:create|make|build|generate|new)\b[\s\S]*?(?:file|document|txt)\b/.test(lowerCommand);
 	const removeLineIntent =
-		/\b(?:remove|delete|clear)\b/.test(lowerCommand) &&
+		/\b(?:remove|delete|clear)\b/.test(lowerIntent) &&
 		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
-			lowerCommand,
+			lowerIntent,
 		);
 
 	const extensionChangeIntent =
-		/\bchange\s+(?:the\s+)?extension\b/.test(lowerCommand) ||
-		/\bextension\s+to\s+\.[a-z0-9]{1,10}\b/.test(lowerCommand) ||
-		/\bconvert\b[\s\S]*\.(?:txt|text|md|json|csv|log)\b[\s\S]*\bto\b[\s\S]*\.[a-z0-9]{1,10}\b/.test(lowerCommand);
+		/\bchange\s+(?:the\s+)?extension\b/.test(lowerIntent) ||
+		/\bextension\s+to\s+\.[a-z0-9]{1,10}\b/.test(lowerIntent) ||
+		/\bconvert\b[\s\S]*\.(?:txt|text|md|json|csv|log)\b[\s\S]*\bto\b[\s\S]*\.[a-z0-9]{1,10}\b/.test(lowerIntent);
 	const moveIntent =
-		(/\b(rename|renmae|move)\b/.test(lowerCommand) || extensionChangeIntent) &&
-		(/\b(file|txt|text|document|note|extension)\b/.test(lowerCommand) ||
-			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) ||
+		(/\b(rename|renmae|move)\b/.test(lowerIntent) || extensionChangeIntent) &&
+		(/\b(file|txt|text|document|note|extension)\b/.test(lowerIntent) ||
+			/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerIntent) ||
 			(!!effectiveLastFilePath && extensionChangeIntent));
 	const deleteFileIntent =
 		!removeLineIntent &&
-		/\b(?:delete|remove|erase|trash)\b/.test(lowerCommand) &&
-		(/\b(file|txt|text|document|note)\b/.test(lowerCommand) ||
+		/\b(?:delete|remove|erase|trash)\b/.test(lowerIntent) &&
+		(/\b(file|txt|text|document|note)\b/.test(lowerIntent) ||
 			/\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/.test(commandForParsing) ||
-			(!!effectiveLastFilePath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand)));
+			(!!effectiveLastFilePath && /\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerIntent)) ||
+			(!!effectiveLastFilePath && /\bconfirm\b/.test(lowerIntent)));
+
+	const mixedMoveAndEditIntent =
+		moveIntent &&
+		(/\b(add|append|insert|replace|update|udpate|updte|updat|udate|edit|modify|rewrite|line)\b/.test(lowerIntent) ||
+			/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
+				lowerIntent,
+			));
+	if (mixedMoveAndEditIntent) {
+		return withFailure(
+			'clarify',
+			'This request mixes rename/move with content edits. Choose one operation first (rename/move OR edit content).',
+			baseDir,
+			cleanupPath(effectiveLastFilePath || baseDir),
+			modelConfidence,
+			plannerTier,
+		);
+	}
 
 	const allowedActions: AxiomAction[] = ['write_file', 'read_file', 'list_directory', 'delete_file', 'move_file'];
 	let rawPlannerAction = String((parsed as any).action || '').toLowerCase();
@@ -832,6 +972,22 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	const contextRef =
 		(/\b(it|this|that|same|latest|last|previous|current)\b/.test(lowerCommand) || /\b(?:in|into)\s+it\b/.test(lowerCommand)) &&
 		!(namingItPhrase && createWithExplicitName);
+
+	const hasExplicitNewCommandWhilePendingClarify =
+		/\b(read|open|show|list|create|make|build|generate|write|append|update|udpate|updte|updat|udate|edit|modify|replace|insert|rename|renmae|move|delete|remove|erase|trash)\b/.test(
+			lowerIntent,
+		) &&
+		(/\b(file|txt|text|document|folder|directory)\b/.test(lowerIntent) || !!extractCommandPath(commandForParsing) || !!extractFileNameHint(commandForParsing));
+	if (pendingClarify && selectionChoice === null && !hasExplicitNewCommandWhilePendingClarify) {
+		return withFailure(
+			'clarify',
+			'Please reply with 1, 2, 3, or 4 for the pending clarification, or send a new explicit file command.',
+			baseDir,
+			cleanupPath(effectiveLastFilePath || baseDir),
+			modelConfidence,
+			plannerTier,
+		);
+	}
 	const rawPath = cleanupPath((parsed as any).path || (parsed as any).filePath || (parsed as any).filename || '');
 	const hasExplicitPathInCommand =
 		!!explicitPathFromCommand || /\b[A-Za-z0-9 _.-]+\.(?:txt|text|md|json|csv|log)\b/i.test(commandForParsing);
@@ -846,8 +1002,25 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		fileNameHint,
 	});
 	let chosenPath = referenceResolution.target.path || '';
+	const normalizedChosen = cleanupPath(chosenPath).replace(/[\\/]+$/, '').toLowerCase();
+	const normalizedBaseDir = cleanupPath(baseDir).replace(/[\\/]+$/, '').toLowerCase();
+	const unresolvedFileTarget =
+		(action === 'read_file' || action === 'delete_file' || action === 'move_file') &&
+		!explicitPathFromCommand &&
+		!rawPath &&
+		!effectiveLastFilePath &&
+		(!chosenPath || normalizedChosen === normalizedBaseDir || referenceResolution.target.ref === 'base_dir');
+	if (unresolvedFileTarget) {
+		chosenPath = '';
+	}
 	if (!chosenPath) {
-		chosenPath = action === 'write_file' ? effectiveLastFilePath || defaultWriteName : effectiveLastFilePath || baseDir;
+		if (action === 'write_file') {
+			chosenPath = effectiveLastFilePath || defaultWriteName;
+		} else if (action === 'list_directory') {
+			chosenPath = effectiveLastFilePath || baseDir;
+		} else {
+			chosenPath = effectiveLastFilePath || '';
+		}
 	}
 
 	const nonCreateWriteWithoutTarget =
@@ -870,6 +1043,22 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 
 	let fullPath = sanitizePath(chosenPath, action, baseDir, defaultWriteName);
 	let destinationPath = '';
+	if ((action === 'read_file' || action === 'delete_file' || action === 'move_file') && !fullPath) {
+		const missingTargetMessage =
+			action === 'delete_file'
+				? 'I need the exact file name/path to delete. Example: delete C:/Users/Martin/.n8n-files/Axiom_Files/example.txt'
+				: action === 'move_file'
+					? 'I need the source file path/name before I can move or rename it.'
+					: 'I need the target file path before I can execute this operation.';
+		return withFailure(
+			clarifyOnError ? 'clarify' : 'error',
+			missingTargetMessage,
+			baseDir,
+			'',
+			modelConfidence,
+			plannerTier,
+		);
+	}
 	if (action === 'move_file') {
 		const rawTarget =
 			cleanupPath((parsed as any).destinationPath || (parsed as any).toPath || (parsed as any).newPath || (parsed as any).targetPath || '') ||
@@ -900,6 +1089,32 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 	}
 	let append =
 		(parsed as any).append !== undefined ? !!(parsed as any).append : String((parsed as any).writeMode || '').toLowerCase() === 'append';
+
+	const deleteConfirmed =
+		action === 'delete_file' &&
+		/\b(?:confirm|yes)\b/.test(lowerCommand) &&
+		/\b(?:delete|remove|erase|trash)\b/.test(lowerCommand);
+	if (action === 'delete_file' && !isSpecificTargetPath(fullPath, baseDir)) {
+		return withFailure(
+			clarifyOnError ? 'clarify' : 'error',
+			'I need the exact file name/path to delete. Example: delete C:/Users/Martin/.n8n-files/Axiom_Files/example.txt',
+			baseDir,
+			'',
+			modelConfidence,
+			plannerTier,
+		);
+	}
+	if (action === 'delete_file' && !deleteConfirmed) {
+		const targetLabel = fullPath || 'the selected file';
+		return withFailure(
+			'clarify',
+			`Delete is destructive. Confirmation required for file: ${targetLabel}.`,
+			baseDir,
+			fullPath,
+			modelConfidence,
+			plannerTier,
+		);
+	}
 
 	const commandHasLineIntent =
 		/\b(?:\d+(?:st|nd|rd|th)?[a-z]*|first|second|third|thrid|tird|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\s+line\b/.test(
@@ -1003,7 +1218,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		);
 	}
 
-	if (deterministicTransform && action !== 'error' && action !== 'clarify') {
+	if (deterministicTransform && action !== 'error') {
 		action = 'read_file';
 		append = false;
 		content = '';
@@ -1065,7 +1280,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 			clarifyOnError ? 'clarify' : 'error',
 			'I could not determine a safe tool action. Please ask to read a file, write a file with content, or list a directory.',
 			baseDir,
-			fullPath,
+			'',
 			modelConfidence,
 			plannerTier,
 		);
@@ -1073,7 +1288,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 
 	const inferActionMatch = inferredAction ? inferredAction === action : true;
 	const sanePath = !!fullPath && (fullPath.toLowerCase().startsWith(baseDir.toLowerCase()) || /^[A-Za-z]:\//.test(fullPath));
-	const hasSpecificFilePath = !!fullPath && !String(fullPath || '').match(/[\\/]Axiom_Files[\\/]?$/i);
+	const hasSpecificFilePath = isSpecificTargetPath(fullPath, baseDir);
 	const requiredFields =
 		action === 'write_file'
 			? !!fullPath && (!isCreateFileWithoutPayload ? !!content || lineEdits.length > 0 : true)
@@ -1196,7 +1411,9 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		operation: normalizedIntent.operation,
 		confidence: deterministicConfidence,
 		actionHint: action,
-		isExternal: false,
+		isExternal:
+			(!!fullPath && !fullPath.toLowerCase().startsWith(baseDir.toLowerCase())) ||
+			(!!destinationPath && !destinationPath.toLowerCase().startsWith(baseDir.toLowerCase())),
 		unresolved: referenceForIR.unresolved,
 	});
 	const irValidation = validateIntentIR(intentIR);
@@ -1235,6 +1452,9 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 
 	const planBlocks = buildPlanBlocksFromIR(intentIR);
 	const planReadable = buildPlanReadable(planBlocks);
+	const isExternal =
+		(!!fullPath && !fullPath.toLowerCase().startsWith(baseDir.toLowerCase())) ||
+		(!!destinationPath && !destinationPath.toLowerCase().startsWith(baseDir.toLowerCase()));
 
 	return {
 		action,
@@ -1242,7 +1462,7 @@ export function parseAxiomPlan(input: AxiomParseInput): AxiomParseOutput {
 		fullPath,
 		path: fullPath,
 		destinationPath: action === 'move_file' ? destinationPath : undefined,
-		isExternal: false,
+		isExternal,
 		append: action === 'write_file' ? append : false,
 		allowEmptyWrite: action === 'write_file' ? isCreateFileWithoutPayload : false,
 		confidence: deterministicConfidence,
